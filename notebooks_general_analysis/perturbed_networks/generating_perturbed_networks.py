@@ -2,109 +2,104 @@ import NoiseEffect as na
 from pathlib import Path
 import sys
 
+# Extract the key for network to be analyzed
 baseline_key = sys.argv[1]
 
-baseline_files = {"test": f"./data/baseline_networks/test_network/karate_club.tsv"}
+noise_levels_removed = [0.02, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.40, 0.50]
+noise_levels_added = [0.05, 0.10, 0.15, 0.20, 0.30, 0.50, 1.00, 1.50, 2.00]
 
-noise_levels_removed = [0.05, 0.1, 0.15, 0.2, 0.3, 0.5, 0.75, 0.95]
-noise_levels_added = [0.05, 0.1, 0.15, 0.2, 0.3, 0.5, 0.75, 1.0, 1.5, 2.0]
+############################################################
+# File paths
+############################################################
 
-output_folders_random = {"test": "./data/perturbed_networks/test_network/perturbed_random_target"}
-output_folders_hub_targeted = {
-    "test": "./data/perturbed_networks/test_network/perturbed_hub_target"
-}
-output_folders_periphery_targeted = {
-    "test": "./data/perturbed_networks/test_network/perturbed_periphery_target"
-}
-
-""""
-input_networks = {
-    "chloe_ppi": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/originals/chloe_ppi/chloe_ppi_lcc_2026_02_23.tsv",
-    "config_model_0": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/originals/configuration_models/configuration_model_0.tsv",
-    "config_model_1": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/originals/configuration_models/configuration_model_1.tsv",
-    "config_model_2": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/originals/configuration_models/configuration_model_2.tsv",
-    "erdos_renyi_0": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/originals/erdos_renyi_models/erdos_renyi_model_0.tsv",
-    "erdos_renyi_1": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/originals/erdos_renyi_models/erdos_renyi_model_1.tsv",
-    "erdos_renyi_2": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/originals/erdos_renyi_models/erdos_renyi_model_2.tsv",
-    "sbm_degree_not_preserved_0": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/originals/classic_sbm_models/sbm_network_degree_not_preserved_307_blocks_0.tsv",
-    "sbm_degree_not_preserved_1": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/originals/classic_sbm_models/sbm_network_degree_not_preserved_307_blocks_1.tsv",
-    "sbm_degree_not_preserved_2": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/originals/classic_sbm_models/sbm_network_degree_not_preserved_307_blocks_2.tsv",
-    "sbm_degree_preserved_0": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/originals/degree_pres_sbm_models/sbm_network_307_blocks_0.tsv",
-    "sbm_degree_preserved_1": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/originals/degree_pres_sbm_models/sbm_network_307_blocks_1.tsv",
-    "sbm_degree_preserved_2": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/originals/degree_pres_sbm_models/sbm_network_307_blocks_2.tsv",
-    "hgg_0": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/originals/hgg/hgg_model_0.tsv",
-    "hgg_1": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/originals/hgg/hgg_model_1.tsv",
-    "hgg_2": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/originals/hgg/hgg_model_2.tsv",
-    "caida_as": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/originals/real_world/caida_as.tsv",
-    "western_us_power_grid": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/originals/real_world/western_us_power_grid.tsv",
+# Paths of unperturbed baseline networks
+#########################################
+baseline_files = {
+    "chloe_ppi_lcc_2026_02_23": "./data/baseline_networks/chloe_ppi_lcc_2026_02_23.tsv",
+    "chloe_ppi_lcc_2026_02_23_er": "./data/baseline_networks/null_models/chloe_ppi_erdos_renyi.tsv",
+    "chloe_ppi_lcc_2026_02_23_config": "./data/baseline_networks/null_models/chloe_ppi_configuration_model.tsv",
+    "chloe_ppi_lcc_2026_02_23_sbm": "./data/baseline_networks/null_models/chloe_ppi_sbm.tsv",
+    "western_us_power_grid": "./data/baseline_networks/western_us_power_grid.tsv",
+    "western_us_power_grid_er": "./data/baseline_networks/null_models/western_us_power_grid_erdos_renyi.tsv",
+    "western_us_power_grid_config": "./data/baseline_networks/null_models/western_us_power_grid_configuration_model.tsv",
+    "western_us_power_grid_sbm": "./data/baseline_networks/null_models/western_us_power_grid_sbm.tsv",
+    "ca-AstroPH_gcc": "./data/baseline_networks/ca-AstroPh_gcc.tsv",
+    "ca-AstroPH_gcc_er": "./data/baseline_networks/null_models/ca-AstroPh_erdos_renyi.tsv",
+    "ca-AstroPH_gcc_config": "./data/baseline_networks/null_models/ca-AstroPh_configuration_model.tsv",
+    "ca-AstroPH_gcc_sbm": "./data/baseline_networks/null_models/ca-AstroPh_sbm.tsv",
+    "wiki-Vote_gcc": "./data/baseline_networks/wiki-Vote_gcc.tsv",
+    "wiki-Vote_gcc_er": "./data/baseline_networks/null_models/wiki-Vote_erdos_renyi.tsv",
+    "wiki-Vote_gcc_config": "./data/baseline_networks/null_models/wiki-Vote_configuration_model.tsv",
+    "wiki-Vote_gcc_sbm": "./data/baseline_networks/null_models/wiki-Vote_sbm.tsv"
 }
 
+# Paths of output folders for random perturbations
+#########################################
 output_folders_random = {
-    # "chloe_ppi": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_random_target/chloe_ppi",
-    # "config_model_0": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_random_target/configuration_models/configuration_model_0",
-    "config_model_1": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_random_target/configuration_models/configuration_model_1",
-    "config_model_2": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_random_target/configuration_models/configuration_model_2",
-    "erdos_renyi_0": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_random_target/erdos_renyi_models/erdos_renyi_model_0",
-    "erdos_renyi_1": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_random_target/erdos_renyi_models/erdos_renyi_model_1",
-    "erdos_renyi_2": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_random_target/erdos_renyi_models/erdos_renyi_model_2",
-    "sbm_degree_not_preserved_0": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_random_target/classic_sbm_models/sbm_degree_not_preserved_0",
-    "sbm_degree_not_preserved_1": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_random_target/classic_sbm_models/sbm_degree_not_preserved_1",
-    "sbm_degree_not_preserved_2": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_random_target/classic_sbm_models/sbm_degree_not_preserved_2",
-    "sbm_degree_preserved_0": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_random_target/degree_pres_sbm_models/sbm_degree_preserved_0",
-    "sbm_degree_preserved_1": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_random_target/degree_pres_sbm_models/sbm_degree_preserved_1",
-    "sbm_degree_preserved_2": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_random_target/degree_pres_sbm_models/sbm_degree_preserved_2",
-    "hgg_0": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_random_target/hgg/hgg_model_0",
-    "hgg_1": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_random_target/hgg/hgg_model_1",
-    "hgg_2": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_random_target/hgg/hgg_model_2",
-    "caida_as": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_random_target/real_world/caida_as",
-    "western_us_power_grid": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_random_target/real_world/western_us_power_grid",
+    "chloe_ppi_lcc_2026_02_23": "./data/perturbed_networks/chloe_ppi_lcc_2026_02_23/perturbed_random_target",
+    "chloe_ppi_lcc_2026_02_23_er": "./data/perturbed_networks/chloe_ppi_lcc_2026_02_23_erdos_renyi/perturbed_random_target",
+    "chloe_ppi_lcc_2026_02_23_config": "./data/perturbed_networks/chloe_ppi_lcc_2026_02_23_configuration_model/perturbed_random_target",
+    "chloe_ppi_lcc_2026_02_23_sbm": "./data/perturbed_networks/chloe_ppi_lcc_2026_02_23_sbm/perturbed_random_target",
+    "western_us_power_grid": "./data/perturbed_networks/western_us_power_grid/perturbed_random_target",
+    "western_us_power_grid_er": "./data/perturbed_networks/western_us_power_grid_erdos_renyi/perturbed_random_target",
+    "western_us_power_grid_config": "./data/perturbed_networks/western_us_power_grid_configuration_model/perturbed_random_target",
+    "western_us_power_grid_sbm": "./data/perturbed_networks/western_us_power_grid_sbm/perturbed_random_target",
+    "ca-AstroPH_gcc": "./data/perturbed_networks/ca-AstroPh_gcc/perturbed_random_target",
+    "ca-AstroPH_gcc_er": "./data/perturbed_networks/ca-AstroPh_erdos_renyi/perturbed_random_target",
+    "ca-AstroPH_gcc_config": "./data/perturbed_networks/ca-AstroPh_configuration_model/perturbed_random_target",
+    "ca-AstroPH_gcc_sbm": "./data/perturbed_networks/ca-AstroPh_sbm/perturbed_random_target",
+    "wiki-Vote_gcc": "./data/perturbed_networks/wiki-Vote_gcc/perturbed_random_target",
+    "wiki-Vote_gcc_er": "./data/perturbed_networks/wiki-Vote_erdos_renyi/perturbed_random_target",
+    "wiki-Vote_gcc_config": "./data/perturbed_networks/wiki-Vote_configuration_model/perturbed_random_target",
+    "wiki-Vote_gcc_sbm": "./data/perturbed_networks/wiki-Vote_sbm/perturbed_random_target"
 }
 
+# Paths of of output folders for hub-targeted perturbations
+#########################################
 output_folders_hub_targeted = {
-    # "chloe_ppi": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_hub_target/chloe_ppi",
-    # "config_model_0": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_hub_target/configuration_models/configuration_model_0",
-    "config_model_1": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_hub_target/configuration_models/configuration_model_1",
-    "config_model_2": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_hub_target/configuration_models/configuration_model_2",
-    "erdos_renyi_0": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_hub_target/erdos_renyi_models/erdos_renyi_model_0",
-    "erdos_renyi_1": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_hub_target/erdos_renyi_models/erdos_renyi_model_1",
-    "erdos_renyi_2": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_hub_target/erdos_renyi_models/erdos_renyi_model_2",
-    "sbm_degree_not_preserved_0": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_hub_target/classic_sbm_models/sbm_degree_not_preserved_0",
-    "sbm_degree_not_preserved_1": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_hub_target/classic_sbm_models/sbm_degree_not_preserved_1",
-    "sbm_degree_not_preserved_2": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_hub_target/classic_sbm_models/sbm_degree_not_preserved_2",
-    "sbm_degree_preserved_0": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_hub_target/degree_pres_sbm_models/sbm_degree_preserved_0",
-    "sbm_degree_preserved_1": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_hub_target/degree_pres_sbm_models/sbm_degree_preserved_1",
-    "sbm_degree_preserved_2": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_hub_target/degree_pres_sbm_models/sbm_degree_preserved_2",
-    "hgg_0": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_hub_target/hgg/hgg_model_0",
-    "hgg_1": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_hub_target/hgg/hgg_model_1",
-    "hgg_2": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_hub_target/hgg/hgg_model_2",
-    "caida_as": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_hub_target/real_world/caida_as",
-    "western_us_power_grid": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_hub_target/real_world/western_us_power_grid",
+    "chloe_ppi_lcc_2026_02_23": "./data/perturbed_networks/chloe_ppi_lcc_2026_02_23/perturbed_hub_target",
+    "chloe_ppi_lcc_2026_02_23_er": "./data/perturbed_networks/chloe_ppi_lcc_2026_02_23_erdos_renyi/perturbed_hub_target",
+    "chloe_ppi_lcc_2026_02_23_config": "./data/perturbed_networks/chloe_ppi_lcc_2026_02_23_configuration_model/perturbed_hub_target",
+    "chloe_ppi_lcc_2026_02_23_sbm": "./data/perturbed_networks/chloe_ppi_lcc_2026_02_23_sbm/perturbed_hub_target",
+    "western_us_power_grid": "./data/perturbed_networks/western_us_power_grid/perturbed_hub_target",
+    "western_us_power_grid_er": "./data/perturbed_networks/western_us_power_grid_erdos_renyi/perturbed_hub_target",
+    "western_us_power_grid_config": "./data/perturbed_networks/western_us_power_grid_configuration_model/perturbed_hub_target",
+    "western_us_power_grid_sbm": "./data/perturbed_networks/western_us_power_grid_sbm/perturbed_hub_target",
+    "ca-AstroPH_gcc": "./data/perturbed_networks/ca-AstroPh_gcc/perturbed_hub_target",
+    "ca-AstroPH_gcc_er": "./data/perturbed_networks/ca-AstroPh_erdos_renyi/perturbed_hub_target",
+    "ca-AstroPH_gcc_config": "./data/perturbed_networks/ca-AstroPh_configuration_model/perturbed_hub_target",
+    "ca-AstroPH_gcc_sbm": "./data/perturbed_networks/ca-AstroPh_sbm/perturbed_hub_target",
+    "wiki-Vote_gcc": "./data/perturbed_networks/wiki-Vote_gcc/perturbed_hub_target",
+    "wiki-Vote_gcc_er": "./data/perturbed_networks/wiki-Vote_erdos_renyi/perturbed_hub_target",
+    "wiki-Vote_gcc_config": "./data/perturbed_networks/wiki-Vote_configuration_model/perturbed_hub_target",
+    "wiki-Vote_gcc_sbm": "./data/perturbed_networks/wiki-Vote_sbm/perturbed_hub_target"
 }
 
-
+# Paths of of output folders for periphery-targeted perturbations
+#########################################
 output_folders_periphery_targeted = {
-    # "chloe_ppi": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_periphery_target/chloe_ppi",
-    # "config_model_0": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_periphery_target/configuration_models/configuration_model_0",
-    "config_model_1": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_periphery_target/configuration_models/configuration_model_1",
-    "config_model_2": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_periphery_target/configuration_models/configuration_model_2",
-    "erdos_renyi_0": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_periphery_target/erdos_renyi_models/erdos_renyi_model_0",
-    "erdos_renyi_1": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_periphery_target/erdos_renyi_models/erdos_renyi_model_1",
-    "erdos_renyi_2": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_periphery_target/erdos_renyi_models/erdos_renyi_model_2",
-    "sbm_degree_not_preserved_0": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_periphery_target/classic_sbm_models/sbm_degree_not_preserved_0",
-    "sbm_degree_not_preserved_1": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_periphery_target/classic_sbm_models/sbm_degree_not_preserved_1",
-    "sbm_degree_not_preserved_2": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_periphery_target/classic_sbm_models/sbm_degree_not_preserved_2",
-    "sbm_degree_preserved_0": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_periphery_target/degree_pres_sbm_models/sbm_degree_preserved_0",
-    "sbm_degree_preserved_1": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_periphery_target/degree_pres_sbm_models/sbm_degree_preserved_1",
-    "sbm_degree_preserved_2": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_periphery_target/degree_pres_sbm_models/sbm_degree_preserved_2",
-    "hgg_0": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_periphery_target/hgg/hgg_model_0",
-    "hgg_1": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_periphery_target/hgg/hgg_model_1",
-    "hgg_2": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_periphery_target/hgg/hgg_model_2",
-    "caida_as": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_periphery_target/real_world/caida_as",
-    "western_us_power_grid": "/Users/marlene/Documents/data/Projects/23_noise_in_networks_systematic/Code/NoiseInNetworks/paper_notebooks/comparison_network_creation/networks_2026_05_06/perturbed_periphery_target/real_world/western_us_power_grid",
+    "chloe_ppi_lcc_2026_02_23": "./data/perturbed_networks/chloe_ppi_lcc_2026_02_23/perturbed_periphery_target",
+    "chloe_ppi_lcc_2026_02_23_er": "./data/perturbed_networks/chloe_ppi_lcc_2026_02_23_erdos_renyi/perturbed_periphery_target",
+    "chloe_ppi_lcc_2026_02_23_config": "./data/perturbed_networks/chloe_ppi_lcc_2026_02_23_configuration_model/perturbed_periphery_target",
+    "chloe_ppi_lcc_2026_02_23_sbm": "./data/perturbed_networks/chloe_ppi_lcc_2026_02_23_sbm/perturbed_periphery_target",
+    "western_us_power_grid": "./data/perturbed_networks/western_us_power_grid/perturbed_periphery_target",
+    "western_us_power_grid_er": "./data/perturbed_networks/western_us_power_grid_erdos_renyi/perturbed_periphery_target",
+    "western_us_power_grid_config": "./data/perturbed_networks/western_us_power_grid_configuration_model/perturbed_periphery_target",
+    "western_us_power_grid_sbm": "./data/perturbed_networks/western_us_power_grid_sbm/perturbed_periphery_target",
+    "ca-AstroPH_gcc": "./data/perturbed_networks/ca-AstroPh_gcc/perturbed_periphery_target",
+    "ca-AstroPH_gcc_er": "./data/perturbed_networks/ca-AstroPh_erdos_renyi/perturbed_periphery_target",
+    "ca-AstroPH_gcc_config": "./data/perturbed_networks/ca-AstroPh_configuration_model/perturbed_periphery_target",
+    "ca-AstroPH_gcc_sbm": "./data/perturbed_networks/ca-AstroPh_sbm/perturbed_periphery_target",
+    "wiki-Vote_gcc": "./data/perturbed_networks/wiki-Vote_gcc/perturbed_periphery_target",
+    "wiki-Vote_gcc_er": "./data/perturbed_networks/wiki-Vote_erdos_renyi/perturbed_periphery_target",
+    "wiki-Vote_gcc_config": "./data/perturbed_networks/wiki-Vote_configuration_model/perturbed_periphery_target",
+    "wiki-Vote_gcc_sbm": "./data/perturbed_networks/wiki-Vote_sbm/perturbed_periphery_target"
 }
-"""
 
-# Perturbing
+
+############################################################
+# Determine the parameters
+############################################################
 
 PERTURBATIONS = {
     "random": {
@@ -121,7 +116,10 @@ PERTURBATIONS = {
     }
 }
 
-    
+############################################################
+# Run the code to generate the perturbed networks
+############################################################
+
 for perturbation_type in PERTURBATIONS.keys():
     # Create the folder if it does not exist
     if not Path(PERTURBATIONS[perturbation_type]["folder"]).exists():
