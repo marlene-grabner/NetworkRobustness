@@ -12,6 +12,7 @@ __pycache__/
 
 # Data
 .data/
+.outputs/
 
 # Pytest cache
 .pytest_cache/
