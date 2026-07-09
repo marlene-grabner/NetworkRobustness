@@ -98,4 +98,3 @@ if __name__ == '__main__':
         final_key_df = pd.concat(all_dfs_for_key, ignore_index=True)
         out_filename = f"{out_path}/gcc_singletons_{key}.csv"
         final_key_df.to_csv(out_filename, index=False)
-
