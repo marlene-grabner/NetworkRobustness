@@ -210,4 +210,4 @@ Includes utilities for synthetic seed generation (BFS-based), ranking comparison
 
 ## Acknowledgments
 
-This project was developed at the [Menche Lab](https://www.menchelab.com/), University of Vienna.
+This project was developed at the [Ludwig Boltzmann Institute for Network Medicine](https://netmed.lbg.ac.at/), University of Vienna.
