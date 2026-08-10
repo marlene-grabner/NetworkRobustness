@@ -1,7 +1,4 @@
 from .NoisePipeline import NetworkNoiseAnalysis
-from .BenchmarkAlgorithms import benchmarkAlgorithm
-from .BenchmarkAlgorithms import plotStabilityResults
-from .BenchmarkAlgorithms import plotSpreadOfStabilityResults
 from .NoiseNetworks import generateNoiseNetworksFromBaseline
 from .ModuleRecovery import benchmarkModuleDetectionAlgorithms
 from .SeedStrucutralMetrics import computeSeedStrucutralMetrics
