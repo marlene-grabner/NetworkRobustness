@@ -1,10 +1,9 @@
 from .NoisePipeline import NetworkNoiseAnalysis
-from .BenchmarkAlgorithms import benchmarkAlgorithm
-from .BenchmarkAlgorithms import plotStabilityResults
-from .BenchmarkAlgorithms import plotSpreadOfStabilityResults
+from . import CommunityDetection
 from .NoiseNetworks import generateNoiseNetworksFromBaseline
 from .ModuleRecovery import benchmarkModuleDetectionAlgorithms
 from .SeedStrucutralMetrics import computeSeedStrucutralMetrics
 from .CompareModules import compareModules
 from .GlobalProperties import calculate_singletons_and_gcc, _process_singletons_and_gcc
 from . import GlobalProperties
+from . import SeedExpansion
