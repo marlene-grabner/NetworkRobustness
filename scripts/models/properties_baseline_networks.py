@@ -34,6 +34,8 @@ df.rename(
     inplace=True,
 )
 
+df.to_csv("./outputs/models/baseline_network_properties.csv", index=True, header=True)
+
 
 ############################################################
 # Plot degree distribution
@@ -44,7 +46,7 @@ TopologicalProperties.plot_degree_distribution(
     num_bins=40,
     log_binning=True,
     fit_trend=True,
-    save_fig="./outputs/figures/baseline_properties/ppi_degree_distribution.pdf",
+    save_fig="./outputs/models/figures/degree_distributions/ppi_degree_distribution.pdf",
     color="#782235",
     marker="o",
 )
@@ -53,7 +55,7 @@ TopologicalProperties.plot_degree_distribution(
     num_bins=40,
     log_binning=False,
     fit_trend=True,
-    save_fig="./outputs/figures/baseline_properties/power_grid_degree_distribution.pdf",
+    save_fig="./outputs/models/figures/degree_distributions/power_grid_degree_distribution.pdf",
     color="#372278",
     marker="o",
 )
@@ -62,14 +64,14 @@ TopologicalProperties.plot_degree_distribution(
     num_bins=40,
     log_binning=True,
     fit_trend=True,
-    save_fig="./outputs/figures/baseline_properties/astrophysics_degree_distribution.pdf",
+    save_fig="./outputs/models/figures/degree_distributions/astrophysics_degree_distribution.pdf",
     color="#227851",
     marker="o",
 )
 TopologicalProperties.plot_degree_distribution(
     G_wiki,
     num_bins=40,
-    save_fig="./outputs/figures/baseline_properties/wiki_degree_distribution.pdf",
+    save_fig="./outputs/models/figures/degree_distributions/wiki_degree_distribution.pdf",
     log_binning=True,
     fit_trend=True,
     color="#E8AD0C",
