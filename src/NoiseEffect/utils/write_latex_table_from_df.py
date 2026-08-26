@@ -22,10 +22,30 @@ _LATEX_SPECIALS = {
 
 def _latex_escape(text: str) -> str:
     """Escape LaTeX special characters in a plain-text string."""
-    out = []
-    for ch in text:
-        out.append(_LATEX_SPECIALS.get(ch, ch))
-    return "".join(out)
+    return "".join(_LATEX_SPECIALS.get(ch, ch) for ch in text)
+
+
+def _wrap_header(text: str, max_width: int) -> str:
+    """
+    Greedily wrap a header onto multiple lines when it exceeds max_width
+    characters, using \\shortstack (no extra LaTeX package required).
+    Returns text unchanged if it fits on one line.
+    """
+    if max_width is None or len(text) <= max_width:
+        return text
+    words = text.split(" ")
+    lines, cur = [], ""
+    for w in words:
+        if cur and len(cur) + 1 + len(w) > max_width:
+            lines.append(cur)
+            cur = w
+        else:
+            cur = f"{cur} {w}".strip()
+    if cur:
+        lines.append(cur)
+    if len(lines) <= 1:
+        return text
+    return "\\shortstack{" + "\\\\".join(lines) + "}"
 
 
 def _fmt_number(x, decimals, sci_low, sci_high):
@@ -38,7 +58,6 @@ def _fmt_number(x, decimals, sci_low, sci_high):
     if isinstance(x, bool):
         return str(x)
 
-    # Integer types render as integers (no decimals, no sci notation).
     if isinstance(x, (int, np.integer)):
         return f"{int(x)}"
 
@@ -66,14 +85,8 @@ def format_dataframe_for_latex(
 ) -> pd.DataFrame:
     """
     Return a copy of df with every value turned into a display string.
-
-    Formatting is inferred from the data, so this works on any DataFrame:
-      - integer columns          -> integers
-      - float columns            -> `decimals` places, power-of-10 for tiny/huge
-      - object / mixed columns   -> decided per cell by the value's own type
-        (this is what makes it survive a .T transpose, where columns become
-        object dtype holding a mix of ints, floats and strings)
-    Non-numeric text is escaped for LaTeX when escape_text=True.
+    Formatting is inferred from the data, so this works on any DataFrame
+    (including object/mixed columns produced by a .T transpose).
     """
     out = df.copy()
 
@@ -95,7 +108,7 @@ def format_dataframe_for_latex(
             out[col] = s.map(lambda v: "" if pd.isna(v) else f"{int(v)}")
         elif pd.api.types.is_float_dtype(s):
             out[col] = s.map(lambda v: _fmt_number(v, decimals, sci_low, sci_high))
-        else:  # object / mixed / string
+        else:
             out[col] = s.map(fmt_cell)
 
     return out
@@ -111,7 +124,7 @@ def df_to_latex(
     caption: str,
     label: str,
     column_format: str | None = None,
-    index: bool = False,
+    index: bool = True,
     decimals: int = 3,
     sci_low: float = 1e-3,
     sci_high: float = 1e5,
@@ -120,6 +133,9 @@ def df_to_latex(
     clean_headers: bool = True,
     escape_text: bool = True,
     format_numbers: bool = True,
+    wrap_headers: bool = True,
+    header_max_width: int = 16,
+    rule_style: str = "hline",
     **kwargs,
 ):
     """
@@ -127,28 +143,31 @@ def df_to_latex(
 
     Parameters
     ----------
-    index : bool
-        If True, the DataFrame index is shown as a first (left-aligned) column.
-        Use this when your row labels live in the index (e.g. a transposed
-        properties table).
     column_format : str | None
-        LaTeX column spec. If None, it's built automatically as "l" + "c"*(k-1)
-        for the final number of columns.
+        LaTeX column spec. If None (default) it's built automatically as
+        "l" + "c" * (k - 1) for the final number of columns. Pass a string
+        to override (e.g. "lrrrr").
+    index : bool
+        If True, the DataFrame index is shown as a first left-aligned column
+        (use this when row labels live in the index, e.g. a transposed table).
     decimals, sci_low, sci_high :
-        Float precision and the magnitude thresholds below/above which a value
-        is rendered in power-of-10 form.
+        Float precision and the magnitude thresholds for power-of-10 rendering.
     clean_headers : bool
-        Replace underscores with spaces in column headers (no title-casing, so
-        names like "PPI (ER)" are preserved).
+        Replace underscores with spaces in column headers (no title-casing).
     escape_text : bool
-        Escape LaTeX special characters in headers, index labels and any
-        non-numeric cell text. Numeric cells (which may contain generated math
-        like $1.2 \\times 10^{-3}$) are never escaped.
+        Escape LaTeX specials in headers, index labels and non-numeric cells.
+    wrap_headers : bool
+        Wrap long column headers onto multiple lines (via \\shortstack) so wide
+        headers don't stretch the columns.
+    header_max_width : int
+        Character budget per header line before wrapping kicks in.
+    rule_style : {"hline", "booktabs"}
+        "hline" (default) uses plain \\hline rules. "booktabs" keeps pandas'
+        \\toprule / \\midrule / \\bottomrule (needs \\usepackage{booktabs}).
     """
     df_copy = df.copy()
 
-    # Promote the index into a real first column if requested, so it gets the
-    # same cleaning/escaping and is counted in column_format.
+    # Promote the index into a real first column if requested.
     if index:
         header = df_copy.index.name if df_copy.index.name is not None else ""
         idx_vals = [str(v) for v in df_copy.index]
@@ -158,7 +177,6 @@ def df_to_latex(
         df_copy.insert(0, header, idx_vals)
 
     if format_numbers:
-        # Don't re-format the promoted label column as a number; it's text.
         label_col = df_copy.columns[0] if index else None
         target = df_copy.drop(columns=[label_col]) if index else df_copy
         formatted = format_dataframe_for_latex(
@@ -178,7 +196,7 @@ def df_to_latex(
         else:
             df_copy = formatted
 
-    # Headers: clean underscores then escape.
+    # Headers: clean underscores -> escape -> wrap long ones.
     new_cols = []
     for c in df_copy.columns:
         c = str(c)
@@ -186,10 +204,12 @@ def df_to_latex(
             c = c.replace("_", " ")
         if escape_text:
             c = _latex_escape(c)
+        if wrap_headers:
+            c = _wrap_header(c, header_max_width)
         new_cols.append(c)
     df_copy.columns = new_cols
 
-    # Auto column format.
+    # Auto column format if not supplied.
     if column_format is None:
         k = df_copy.shape[1]
         column_format = "l" + "c" * (k - 1) if k > 1 else "l"
@@ -202,6 +222,13 @@ def df_to_latex(
         escape=False,  # we escape ourselves so generated math survives
         **kwargs,
     )
+
+    # Swap booktabs rules for \hline if requested.
+    if rule_style == "hline":
+        for rule in ("\\toprule", "\\midrule", "\\bottomrule"):
+            latex_str = latex_str.replace(rule, "\\hline")
+    elif rule_style != "booktabs":
+        raise ValueError("rule_style must be 'hline' or 'booktabs'")
 
     if resize:
         latex_str = latex_str.replace(
