@@ -7,3 +7,4 @@ from .CompareModules import compareModules
 from .GlobalProperties import calculate_singletons_and_gcc, _process_singletons_and_gcc
 from . import GlobalProperties
 from . import SeedExpansion
+from . import utils
