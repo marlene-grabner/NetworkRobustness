@@ -123,8 +123,8 @@ def generate_null_edgelist(base_level, g, node_to_idx, idx_to_node, original_nod
         b_array,
         e_matrix,
         out_degs=degrees,
-        micro_ers=False,  # match EXPECTED block-mixing counts, not exact
-        micro_degs=False,  # match EXPECTED degrees, not exact
+        micro_ers=False,  # match expected block-mixing counts, not exact
+        micro_degs=False,  # match expected degrees, not exact
         directed=False,
     )
 
