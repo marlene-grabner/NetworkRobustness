@@ -68,7 +68,7 @@ def get_network_profile(G, metrics_on_gcc=True, verbose=False):
     log("Spectral properties...")
     L = nx.laplacian_matrix(H).astype(float)
     try:
-        eigvals, _ = sla.eigsh(L, k=3, which="SA", tol=1e-5)
+        eigvals = sla.eigsh(L, k=6, sigma=0, which="LM", return_eigenvectors=False)
         eigvals = np.sort(eigvals)
         alg_connectivity = float(eigvals[1])
         spectral_gap = float(eigvals[2] - eigvals[1])
