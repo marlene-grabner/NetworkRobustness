@@ -1,224 +1,230 @@
+#!/usr/bin/env python3
+"""
+Production SBM null-model generation.
+
+For each empirical network:
+  1. Fit a nested degree-corrected SBM, with N_RESTARTS independent attempts,
+     each refined by MCMC sweeps; keep the lowest-entropy (best) fit.
+  2. Run a significance check (fitted vs. B=1 baseline) to confirm the
+     partition captures real structure beyond degree sequence.
+  3. Generate the degree-preserving SBM null model from the best fit.
+  4. Save: null-model edgelist (for the downstream pipeline) + a metadata
+     record (for reproducibility / the methods table) + the block assignment.
+
+NOTE: written against standard graph-tool API conventions; not executed here
+(no graph-tool in this environment). Smoke-test on ONE network with
+N_RESTARTS=2, N_MCMC_SWEEPS=10 before committing to the full run.
+
+# ====================================================================
+# DISCLAIMER: requires the graph-tool package (use graphtool-env).
+# ====================================================================
+"""
+
 import graph_tool.all as gt
 import networkx as nx
 import numpy as np
-import matplotlib.pyplot as plt
-import scipy.stats as stats
-
-# ====================================================================
-# DISCLAIMER: This file only works with the graphtool package
-# installed, which is not available in the current environment due
-# to a mismatch of python version. Use graphtool-env instead
-# ====================================================================
-
-##################################################
-# Load empirical networks
-##################################################
-
-networks_path = "./data/baseline_networks/"
-
-G_ppi = nx.read_edgelist(networks_path + "chloe_ppi_lcc_2026_02_23.tsv", delimiter="\t")
-G_power = nx.read_edgelist(networks_path + "western_us_power_grid.tsv", delimiter="\t")
-G_collab = nx.read_edgelist(networks_path + "ca-AstroPh_gcc.tsv", delimiter="\t")
-G_wiki = nx.read_edgelist(networks_path + "wiki-Vote_gcc.tsv", delimiter="\t")
+import json
+import os
 
 
-# ====================================================================
-# Functions
-# ====================================================================
-
-
-##################################################
-# Make SBM null model
-##################################################
-
-
-def sbm_model_from_graph(G: nx.Graph, nested: bool = False) -> nx.Graph:
+def fit_best_sbm(
+    G: nx.Graph,
+    n_restarts: int = 15,
+    n_mcmc_sweeps: int = 200,
+    deg_corr: bool = True,
+    verbose: bool = True,
+):
     """
-    Fits a Stochastic Block Model (SBM) to the input graph G using graph-tool,
-    and generates a randomized null model that preserves the inferred block structure.
-    Parameters:
-        - G: Input graph as a NetworkX graph object.
-        - nested: If True, fits a hierarchical SBM; otherwise, fits a degree-corrected SBM.
-    Returns:
-        - null_model_nx: A NetworkX graph object representing the SBM null model.
-        - state: The fitted graph-tool SBM state object (useful for diagnostics).
-        - node_to_idx: A mapping from original NetworkX node IDs to graph-tool vertex indices (useful for block assignment verification).
+    Fit a nested degree-corrected SBM with multiple restarts + MCMC
+    refinement. Returns the lowest-entropy fit and everything needed to
+    generate the null and to audit the fit later.
     """
-    #  Empty graphtool graph
-    g = gt.Graph(directed=False)
-
-    # Maooing between networkx noide IDs and graphtool ints
+    # --- Build the graph-tool graph, keeping a stable node<->index map ---
     original_nodes = list(G.nodes())
     node_to_idx = {node: i for i, node in enumerate(original_nodes)}
     idx_to_node = {i: node for node, i in node_to_idx.items()}
 
-    # Add original vertices
+    g = gt.Graph(directed=False)
     g.add_vertex(len(original_nodes))
+    g.add_edge_list([(node_to_idx[u], node_to_idx[v]) for u, v in G.edges()])
 
-    # Add edges
-    gt_edges = [(node_to_idx[u], node_to_idx[v]) for u, v in G.edges()]
-    g.add_edge_list(gt_edges)
+    best_state = None
+    best_entropy = np.inf
+    entropies = []
 
-    # Chose which type of SBM to fit
-    if nested:
-        # Hierachical SBM
-        state = gt.minimize_nested_blockmodel_dl(g)
-        lstate = state.get_levels()[0]
-    else:
-        # Degree corrected SBM
-        state = gt.minimize_blockmodel_dl(g, state_args=dict(deg_corr=True))
-        lstate = state
+    for r in range(n_restarts):
+        # Each restart begins from an independent random initialization,
+        # so different restarts explore different regions of the landscape.
+        state = gt.minimize_nested_blockmodel_dl(g, state_args=dict(deg_corr=deg_corr))
 
-    # Statistics
-    entropy_score = state.entropy()
-    num_communities = lstate.get_nonempty_B()
-    print(f"SBM Entropy score: {entropy_score:.4f}")
-    print(f"SBM: Found {num_communities} active communities at the base layer.")
+        # Zero-temperature (beta=inf) MCMC refinement: only accept moves that
+        # LOWER description length. This walks the fit downhill out of the
+        # poor local optimum that a single minimize_*_dl call often lands in.
+        for _ in range(n_mcmc_sweeps):
+            state.multiflip_mcmc_sweep(beta=np.inf, niter=1)
 
-    # Extract parameters as native C-aligned arrays/matrices for generation
-    b_array = lstate.b.a  # Extracts the block assignments as a raw NumPy array
-    e_matrix = lstate.get_matrix()  # Returns the block edge count sparse matrix
-    degrees = g.degree_property_map(
-        "out"
-    ).a  # Highly optimized C++ array fetch for degrees
+        ent = state.entropy()
+        entropies.append(ent)
+        if verbose:
+            b0 = state.get_levels()[0].get_nonempty_B()
+            print(
+                f"    restart {r + 1:2d}/{n_restarts}: entropy={ent:.2f}, L0 blocks={b0}"
+            )
 
-    # Generate the randomized reference model graph
-    # Both tracks now pass the degree sequence to ensure unified degree-correction constraints
-    null_model_gt = gt.generate_sbm(
+        if ent < best_entropy:
+            best_entropy = ent
+            best_state = state
+
+    base_level = best_state.get_levels()[0]  # flat level-0 partition
+    if verbose:
+        print(
+            f"  BEST: entropy={best_entropy:.2f}, "
+            f"L0 blocks={base_level.get_nonempty_B()}, "
+            f"levels={len(best_state.get_levels())}, "
+            f"entropy spread across restarts={np.std(entropies):.2f}"
+        )
+
+    return best_state, base_level, g, node_to_idx, idx_to_node, entropies
+
+
+def significance_vs_degree(g, base_level, deg_corr: bool = True):
+    """
+    Does the fitted partition earn its keep vs. assuming NO block structure?
+    Compares description length of the fit against a single-block (B=1),
+    degree-corrected baseline -- the SBM equivalent of the configuration model.
+
+    Positive, large delta_L  -> blocks capture real structure beyond degree.
+    Near-zero / negative      -> partition is not meaningfully better than
+                                 'degree sequence alone' (degenerate signal).
+    """
+    L_fit = base_level.entropy()
+    B_fit = base_level.get_nonempty_B()
+
+    b_trivial = np.zeros(g.num_vertices(), dtype=int)
+    L_b1 = gt.BlockState(g, b=b_trivial, deg_corr=deg_corr).entropy()
+
+    delta_L = L_b1 - L_fit
+    return {
+        "L_fit": float(L_fit),
+        "L_b1": float(L_b1),
+        "delta_L": float(delta_L),
+        "delta_L_per_block": float(delta_L / max(B_fit - 1, 1)),
+        "n_blocks": int(B_fit),
+    }
+
+
+def generate_null_edgelist(base_level, g, node_to_idx, idx_to_node, original_nodes):
+    """Generate the degree-preserving SBM null model as a NetworkX graph."""
+    b_array = base_level.b.a  # per-node block label
+    e_matrix = base_level.get_matrix()  # block-to-block edge count matrix
+    degrees = g.degree_property_map("total").a  # undirected -> "total"
+
+    null_gt = gt.generate_sbm(
         b_array,
         e_matrix,
         out_degs=degrees,
-        micro_ers=False,
-        micro_degs=False,
+        micro_ers=False,  # match EXPECTED block-mixing counts, not exact
+        micro_degs=False,  # match EXPECTED degrees, not exact
         directed=False,
     )
 
-    # Convert to networkx
-    null_model_nx = nx.Graph()
-    null_model_nx.add_nodes_from(original_nodes)
-
-    # Translate graph-tool edge indicies to networkx node IDs
-    null_edges = [
+    null_nx = nx.Graph()
+    null_nx.add_nodes_from(original_nodes)  # preserve isolated/original nodes
+    null_nx.add_edges_from(
         (idx_to_node[int(e.source())], idx_to_node[int(e.target())])
-        for e in null_model_gt.edges()
-    ]
-    null_model_nx.add_edges_from(null_edges)
-
-    return null_model_nx, state, node_to_idx
-
-
-def verify_sbm_blocks(G_real, G_sbm, state, node_to_idx, network_name, save_fig=None):
-    """
-    Verifies that the block-to-block mixing structure of the real network
-    is accurately preserved in the generated SBM null model.
-    Safely handles non-contiguous graph-tool block labels.
-    """
-    # 1. Extract raw block assignments from graph-tool state
-    gt_blocks = state.get_blocks()
-
-    node_to_block = {}
-    for node, idx in node_to_idx.items():
-        node_to_block[node] = int(gt_blocks[idx])
-
-    # FIX: Map raw non-contiguous block labels to sequential matrix indices (0 to num_blocks-1)
-    unique_blocks = sorted(list(set(node_to_block.values())))
-    num_blocks = len(unique_blocks)
-    block_to_matrix_idx = {block_id: i for i, block_id in enumerate(unique_blocks)}
-
-    print(
-        f"Verifying structure across {num_blocks} active blocks (Max Block ID found: {max(unique_blocks)})..."
+        for e in null_gt.edges()
     )
-
-    # 2. Helper function to compute the block mixing matrix E_rs using mapped indices
-    def compute_mixing_matrix(G, node_to_block, block_to_matrix_idx, num_blocks):
-        matrix = np.zeros((num_blocks, num_blocks))
-        for u, v in G.edges():
-            b_u_raw = node_to_block.get(u)
-            b_v_raw = node_to_block.get(v)
-
-            if b_u_raw is not None and b_v_raw is not None:
-                # Convert raw block IDs to sequential matrix indices
-                b_u = block_to_matrix_idx[b_u_raw]
-                b_v = block_to_matrix_idx[b_v_raw]
-
-                matrix[b_u, b_v] += 1
-                if b_u != b_v:
-                    matrix[b_v, b_u] += 1  # Symmetric for undirected graphs
-        return matrix
-
-    # 3. Compute mixing matrices for both graphs
-    E_real = compute_mixing_matrix(
-        G_real, node_to_block, block_to_matrix_idx, num_blocks
-    )
-    E_sbm = compute_mixing_matrix(G_sbm, node_to_block, block_to_matrix_idx, num_blocks)
-
-    # 4. Quantitative Check: Correlation of Edge Allocations
-    tri_u_indices = np.triu_indices(num_blocks)
-    real_flat = E_real[tri_u_indices]
-    sbm_flat = E_sbm[tri_u_indices]
-
-    r_val, _ = stats.pearsonr(real_flat, sbm_flat)
-    print(f"--> Pearson correlation of block mixing matrices: r = {r_val:.4f}")
-
-    if r_val > 0.95:
-        print("SUCCESS: The mesoscale block-structure is highly preserved!")
-    else:
-        print("WARNING: Low correlation. The SBM did not capture the blocks correctly.")
-
-    # 5. Visual Check: Plot Side-by-Side Heatmaps
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-
-    im1 = axes[0].imshow(np.log10(E_real + 1), cmap="viridis", origin="lower")
-    axes[0].set_title(
-        f"{network_name.capitalize().replace('_', ' ')}. Mixing Matrix (Log10)"
-    )
-    axes[0].set_xlabel("Sequential Block Index")
-    axes[0].set_ylabel("Sequential Block Index")
-
-    im2 = axes[1].imshow(np.log10(E_sbm + 1), cmap="viridis", origin="lower")
-    axes[1].set_title("SBM Null Model Mixing Matrix (Log10)")
-    axes[1].set_xlabel("Sequential Block Index")
-
-    fig.colorbar(im2, ax=axes.ravel().tolist(), label="Log10(Edge Count + 1)")
-    if save_fig:
-        plt.savefig(save_fig, bbox_inches="tight")
-    plt.show()
-
-    return r_val
+    return null_nx
 
 
 # ====================================================================
-# Results
+# Run
 # ====================================================================
 
-##################################################
-# Load empirical networks
-##################################################
+if __name__ == "__main__":
+    OUT_DIR = "./data/baseline_networks/null_models/"
+    META_DIR = "./data/baseline_networks/null_models/metadata/"
+    os.makedirs(OUT_DIR, exist_ok=True)
+    os.makedirs(META_DIR, exist_ok=True)
 
-for name, G in zip(
-    ["chloe_ppi", "western_us_power_grid", "ca-AstroPh", "wiki-Vote"],
-    [G_ppi, G_power, G_collab, G_wiki],
-):
-    G_sbm, state_sbm, node_to_idx = sbm_model_from_graph(G)
+    N_RESTARTS = 20
+    N_MCMC_SWEEPS = 1000
 
-    print(f"Original {name} network:")
-    print(f"Number of nodes: {G.number_of_nodes()}")
-    print(f"Number of edges: {G.number_of_edges()}")
-    print(f"\nSBM null model of {name} network:")
-    print(f"Number of nodes: {G_sbm.number_of_nodes()}")
-    print(f"Number of edges: {G_sbm.number_of_edges()}")
-
-    nx.write_edgelist(
-        G_sbm,
-        f"./data/baseline_networks/null_models/{name}_sbm.tsv",
-        delimiter="\t",
+    G_ppi = nx.read_edgelist(
+        "./data/baseline_networks/chloe_ppi_lcc_2026_02_23.tsv", delimiter="\t"
+    )
+    G_power = nx.read_edgelist(
+        "./data/baseline_networks/western_us_power_grid.tsv", delimiter="\t"
+    )
+    G_collab = nx.read_edgelist(
+        "./data/baseline_networks/ca-AstroPh_gcc.tsv", delimiter="\t"
+    )
+    G_wiki = nx.read_edgelist(
+        "./data/baseline_networks/wiki-Vote_gcc.tsv", delimiter="\t"
     )
 
-    verify_sbm_blocks(
-        G,
-        G_sbm,
-        state_sbm,
-        node_to_idx,
-        network_name=name,
-        save_fig=f"outputs/figures/baseline_properties/sbm_confirmation/{name}_sbm_heatmap.pdf",
-    )
+    networks = {
+        "chloe_ppi": G_ppi,
+        "western_us_power_grid": G_power,
+        "ca-AstroPh": G_collab,
+        "wiki-Vote": G_wiki,
+    }
+
+    for name, G in networks.items():
+        print(f"\n=== {name} (N={G.number_of_nodes()}, E={G.number_of_edges()}) ===")
+
+        best_state, base_level, g, node_to_idx, idx_to_node, entropies = fit_best_sbm(
+            G, n_restarts=N_RESTARTS, n_mcmc_sweeps=N_MCMC_SWEEPS
+        )
+
+        sig = significance_vs_degree(g, base_level)
+        print(
+            f"  significance: delta_L={sig['delta_L']:.1f} "
+            f"(per block {sig['delta_L_per_block']:.2f}), blocks={sig['n_blocks']}"
+        )
+        if sig["delta_L"] <= 0:
+            print("  !! WARNING: partition NOT better than degree-only baseline.")
+
+        original_nodes = list(G.nodes())
+        null_nx = generate_null_edgelist(
+            base_level, g, node_to_idx, idx_to_node, original_nodes
+        )
+        print(
+            f"  null model: N={null_nx.number_of_nodes()}, E={null_nx.number_of_edges()}"
+        )
+
+        # (1) EDGELIST -- what the downstream pipeline consumes
+        nx.write_edgelist(
+            null_nx, f"{OUT_DIR}{name}_sbm.tsv", delimiter="\t", data=False
+        )
+
+        # (2) BLOCK ASSIGNMENT -- lets you regenerate more null replicates or
+        #     re-run diagnostics without refitting (fitting is the expensive part)
+        block_map = {
+            str(node): int(base_level.b.a[node_to_idx[node]]) for node in original_nodes
+        }
+        with open(f"{META_DIR}{name}_blocks.json", "w") as f:
+            json.dump(block_map, f)
+
+        # (3) METADATA -- everything the methods section / a reviewer needs
+        meta = {
+            "network": name,
+            "model": "nested_degree_corrected_sbm",
+            "n_restarts": N_RESTARTS,
+            "n_mcmc_sweeps": N_MCMC_SWEEPS,
+            "best_entropy": float(best_state.entropy()),
+            "entropy_mean_across_restarts": float(np.mean(entropies)),
+            "entropy_std_across_restarts": float(np.std(entropies)),
+            "n_levels": len(best_state.get_levels()),
+            "blocks_per_level": [
+                int(l.get_nonempty_B()) for l in best_state.get_levels()
+            ],
+            "orig_nodes": G.number_of_nodes(),
+            "orig_edges": G.number_of_edges(),
+            "null_nodes": null_nx.number_of_nodes(),
+            "null_edges": null_nx.number_of_edges(),
+            **sig,
+        }
+        with open(f"{META_DIR}{name}_meta.json", "w") as f:
+            json.dump(meta, f, indent=2)
+        print(f"  saved edgelist + blocks + metadata for {name}")
