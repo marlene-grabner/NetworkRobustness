@@ -9,10 +9,18 @@ from NoiseEffect.utils import df_to_latex, save_latex_tables
 ############################################################
 
 networks_path = "./data/baseline_networks/null_models/"
+degree_0_nodelists_path = "data/baseline_networks/old_tsv_networks/null_models/"
 
 
 G_ppi_er = nx.read_edgelist(networks_path + "ppi_er.csv", delimiter=",")
 G_power_er = nx.read_edgelist(networks_path + "power_er.csv", delimiter=",")
+with open(
+    degree_0_nodelists_path + "western_us_power_grid_erdos_renyi_isolated_nodes.csv"
+) as f:
+    content = f.read().strip()
+    all_nodes = content.split(",") if content else []
+G_power_er.add_nodes_from(n.strip() for n in all_nodes if n.strip())
+##
 G_collab_er = nx.read_edgelist(networks_path + "astro_er.csv", delimiter=",")
 G_wiki_er = nx.read_edgelist(networks_path + "wiki_er.csv", delimiter=",")
 
@@ -22,9 +30,30 @@ G_collab_conf = nx.read_edgelist(networks_path + "astro_conf.csv", delimiter=","
 G_wiki_conf = nx.read_edgelist(networks_path + "wiki_conf.csv", delimiter=",")
 
 G_ppi_sbm = nx.read_edgelist(networks_path + "ppi_sbm.csv", delimiter=",")
+with open(degree_0_nodelists_path + "chloe_ppi_sbm_isolated_nodes.csv") as f:
+    content = f.read().strip()
+    all_nodes = content.split(",") if content else []
+G_ppi_sbm.add_nodes_from(n.strip() for n in all_nodes if n.strip())
+##
 G_power_sbm = nx.read_edgelist(networks_path + "power_sbm.csv", delimiter=",")
+with open(
+    degree_0_nodelists_path + "western_us_power_grid_sbm_isolated_nodes.csv"
+) as f:
+    content = f.read().strip()
+    all_nodes = content.split(",") if content else []
+G_power_sbm.add_nodes_from(n.strip() for n in all_nodes if n.strip())
+##
 G_collab_sbm = nx.read_edgelist(networks_path + "astro_sbm.csv", delimiter=",")
+with open(degree_0_nodelists_path + "ca-AstroPh_sbm_isolated_nodes.csv") as f:
+    content = f.read().strip()
+    all_nodes = content.split(",") if content else []
+G_collab_sbm.add_nodes_from(n.strip() for n in all_nodes if n.strip())
+##
 G_wiki_sbm = nx.read_edgelist(networks_path + "wiki_sbm.csv", delimiter=",")
+with open(degree_0_nodelists_path + "wiki-Vote_sbm_isolated_nodes.csv") as f:
+    content = f.read().strip()
+    all_nodes = content.split(",") if content else []
+G_wiki_sbm.add_nodes_from(n.strip() for n in all_nodes if n.strip())
 
 
 prop_ppi_er = TopologicalProperties.get_network_profile(G_ppi_er)

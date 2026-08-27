@@ -3,6 +3,36 @@ from NoiseEffect import NullModelGeneration
 from NoiseEffect import TopologicalProperties
 import networkx as nx
 import matplotlib.pyplot as plt
+import os
+
+##################################################
+# Writing null models to file
+##################################################
+
+
+def write_null_with_nodelist(G_null, edge_path):
+    """
+    Write a null model as an edgelist PLUS a sidecar CSV of degree-0 nodes.
+    The CSV is only written if isolated nodes exist. Sidecar path is derived
+    from the edge path: foo.tsv -> foo_isolated_nodes.csv
+    """
+    # edgelist
+    nx.write_edgelist(G_null, edge_path, data=False, delimiter="\t")
+
+    # degree-0 nodes = nodes with no incident edges
+    isolated = [str(n) for n, d in G_null.degree() if d == 0]
+
+    node_path = edge_path.rsplit(".", 1)[0] + "_isolated_nodes.csv"
+    if isolated:
+        with open(node_path, "w") as f:
+            f.write(",".join(isolated))
+        print(f"  wrote {len(isolated)} isolated nodes -> {node_path}")
+    else:
+        # ensure no stale file lingers from a previous run
+        if os.path.exists(node_path):
+            os.remove(node_path)
+        print(f"  no isolated nodes for {os.path.basename(edge_path)}")
+
 
 ##################################################
 # Load empirical networks
@@ -98,57 +128,19 @@ for name, (G_orig, G_er, G_cm) in configuration_models.items():
     plt.show()
 
 # ====================================================================
-# Save the networks as .tsv files
+# Save the networks as .tsv (+ isolated-node sidecar where needed)
 # ====================================================================
 
-# ER models
-nx.write_edgelist(
-    G_er_ppi,
-    networks_path + "null_models/chloe_ppi_erdos_renyi.tsv",
-    data=False,
-    delimiter="\t",
-)
-nx.write_edgelist(
-    G_er_power,
-    networks_path + "null_models/western_us_power_grid_erdos_renyi.tsv",
-    data=False,
-    delimiter="\t",
-)
-nx.write_edgelist(
-    G_er_collab,
-    networks_path + "null_models/ca-AstroPh_erdos_renyi.tsv",
-    data=False,
-    delimiter="\t",
-)
-nx.write_edgelist(
-    G_er_wiki,
-    networks_path + "null_models/wiki-Vote_erdos_renyi.tsv",
-    data=False,
-    delimiter="\t",
-)
+null_outputs = {
+    "chloe_ppi_erdos_renyi.tsv": G_er_ppi,
+    "western_us_power_grid_erdos_renyi.tsv": G_er_power,
+    "ca-AstroPh_erdos_renyi.tsv": G_er_collab,
+    "wiki-Vote_erdos_renyi.tsv": G_er_wiki,
+    "chloe_ppi_configuration_model.tsv": G_cm_ppi,
+    "western_us_power_grid_configuration_model.tsv": G_cm_power,
+    "ca-AstroPh_configuration_model.tsv": G_cm_collab,
+    "wiki-Vote_configuration_model.tsv": G_cm_wiki,
+}
 
-# Configuration models
-nx.write_edgelist(
-    G_cm_ppi,
-    networks_path + "null_models/chloe_ppi_configuration_model.tsv",
-    data=False,
-    delimiter="\t",
-)
-nx.write_edgelist(
-    G_cm_power,
-    networks_path + "null_models/western_us_power_grid_configuration_model.tsv",
-    data=False,
-    delimiter="\t",
-)
-nx.write_edgelist(
-    G_cm_collab,
-    networks_path + "null_models/ca-AstroPh_configuration_model.tsv",
-    data=False,
-    delimiter="\t",
-)
-nx.write_edgelist(
-    G_cm_wiki,
-    networks_path + "null_models/wiki-Vote_configuration_model.tsv",
-    data=False,
-    delimiter="\t",
-)
+for filename, G_null in null_outputs.items():
+    write_null_with_nodelist(G_null, networks_path + "null_models/" + filename)
