@@ -1,4 +1,3 @@
-# %%
 from NoiseEffect import NullModelGeneration
 from NoiseEffect import TopologicalProperties
 import networkx as nx
@@ -40,10 +39,10 @@ def write_null_with_nodelist(G_null, edge_path):
 
 networks_path = "./data/baseline_networks/"
 
-G_ppi = nx.read_edgelist(networks_path + "chloe_ppi_lcc_2026_02_23.tsv", delimiter="\t")
-G_power = nx.read_edgelist(networks_path + "western_us_power_grid.tsv", delimiter="\t")
-G_collab = nx.read_edgelist(networks_path + "ca-AstroPh_gcc.tsv", delimiter="\t")
-G_wiki = nx.read_edgelist(networks_path + "wiki-Vote_gcc.tsv", delimiter="\t")
+G_ppi = nx.read_edgelist(networks_path + "ppi.csv", delimiter=",")
+G_power = nx.read_edgelist(networks_path + "power.csv", delimiter=",")
+G_collab = nx.read_edgelist(networks_path + "astro.csv", delimiter=",")
+G_wiki = nx.read_edgelist(networks_path + "wiki.csv", delimiter=",")
 
 # ====================================================================
 # Null Models
@@ -78,6 +77,7 @@ configuration_models = {
     "Collaboration": [G_collab, G_er_collab, G_cm_collab],
     "Wikipedia Vote": [G_wiki, G_er_wiki, G_cm_wiki],
 }
+
 
 for name, (G_orig, G_er, G_cm) in configuration_models.items():
     print("\n" + "=" * 50)
