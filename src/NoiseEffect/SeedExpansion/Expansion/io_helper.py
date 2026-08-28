@@ -6,8 +6,17 @@ network's edgelist and then reused for every perturbed variant of that same
 network. This keeps seed indices, adjacency dimensions and score vectors
 aligned across baseline/perturbed comparisons without re-mapping per repeat.
 
-If a perturbed edgelist references a node that isn't in the baseline mapping
-(e.g. an "addition" perturbation that introduces new nodes), those edges are
+Null model generation (ER/SBM) can leave a network with degree-0 nodes, which
+can't be represented in an edgelist and are instead recorded in a sidecar
+`*_isolated_nodes.csv` next to it. build_node_index() folds these into the
+node universe up front (see load_isolated_nodes), so a node that's isolated in
+the baseline still gets a real matrix row/column -- this is what lets a later
+"addition" perturbation reconnect it: without a slot reserved for it, its edge
+would reference a node id build_node_index() never saw, and would just be
+silently dropped below rather than added to the graph.
+
+If a perturbed edgelist references a node that STILL isn't in the mapping
+after that (e.g. a genuinely unexpected/invalid node id), those edges are
 dropped by default and a count is returned so you can sanity-check how often
 this happens. Set `extend_index=True` in `edges_to_sparse` if you'd rather
 keep such nodes (they'll just get near-zero RWR scores and be ignored by
@@ -58,10 +67,43 @@ class NodeIndex:
         return np.array([self.node_to_idx.get(n, -1) for n in casted_ids], dtype=np.int64)
 
 
+def load_isolated_nodes(edgelist_path: str | Path) -> set:
+    """
+    Loads degree-0 node ids from the sidecar CSV next to a baseline edgelist
+    (e.g. 'foo_sbm.csv' -> 'foo_sbm_isolated_nodes.csv'), if one exists.
+
+    See the module docstring for why build_node_index() needs these folded in.
+    """
+    edgelist_path = Path(edgelist_path)
+    sidecar = edgelist_path.with_name(edgelist_path.stem + "_isolated_nodes.csv")
+    if not sidecar.exists():
+        return set()
+    content = sidecar.read_text().strip()
+    return {n.strip() for n in content.split(",") if n.strip()}
+
+
 def build_node_index(network: str, edge_df: pd.DataFrame,
-                      source_col: str = "source", target_col: str = "target") -> NodeIndex:
+                      source_col: str = "source", target_col: str = "target",
+                      isolated_nodes: set | None = None) -> NodeIndex:
     nodes = pd.unique(pd.concat([edge_df[source_col], edge_df[target_col]], ignore_index=True))
-    nodes = np.sort(nodes)
+
+    if isolated_nodes:
+        # The sidecar always parses as plain strings; the edgelist's ids may have
+        # been inferred as numeric (e.g. int64 for Entrez-style ids). Cast the
+        # isolated ids to match so np.union1d compares by value, not by type --
+        # otherwise '100129654' (str) and 100129654 (int64) would be treated as
+        # two different nodes and end up as separate, wrongly-split dict keys.
+        extra = np.array(sorted(isolated_nodes))
+        try:
+            extra = extra.astype(nodes.dtype)
+        except (ValueError, TypeError):
+            # ids don't share a common numeric type -- fall back to comparing
+            # everything as strings so the isolated ids still union in correctly
+            nodes = nodes.astype(str)
+        nodes = np.union1d(nodes, extra)
+    else:
+        nodes = np.sort(nodes)
+
     node_to_idx = {n: i for i, n in enumerate(nodes)}
     return NodeIndex(network=network, nodes=nodes, node_to_idx=node_to_idx)
 

@@ -34,7 +34,8 @@ def main():
     if index_path.exists():
         index = io.load_node_index(index_path)
     else:
-        index = io.build_node_index(network, edge_df)
+        isolated_nodes = io.load_isolated_nodes(edgelist_path)
+        index = io.build_node_index(network, edge_df, isolated_nodes=isolated_nodes)
         io.save_node_index(index, index_path)
         
     adj, _ = io.edges_to_sparse(edge_df, index)
