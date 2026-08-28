@@ -3,12 +3,12 @@ import networkx as nx
 import random
 from NoiseEffect.CommunityDetection import benchmarkBaselineStabilityAlgorithm
 from NoiseEffect.CommunityDetection.Visualisations import plotStabilityResults, plotSpreadOfStabilityResults
+from NoiseEffect.CommunityDetection.utils import load_isolated_nodes, build_full_graph
 import math
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-import igraph as ig
 
 # %%
 # -------------------------------------------------------------------------
@@ -16,68 +16,49 @@ import igraph as ig
 # -------------------------------------------------------------------------
 
 #%%
+def load_graph(csv_path):
+    """
+    Loads an edgelist into a complete igraph.Graph, including any degree-0 nodes
+    recorded in the network's isolated-nodes sidecar CSV (only null models
+    generated via ER/SBM can have these, since an edgelist can't represent a
+    node with no edges).
+    """
+    df = pd.read_csv(csv_path, sep=',', names=['source', 'target'], dtype=str)
+    isolated_nodes = load_isolated_nodes(csv_path)
+    g, _node_order, _has_edge = build_full_graph(df, isolated_nodes)
+    return g
+
 ############################################
 # Protein Interaction Network & Null Models
 
-df = pd.read_csv("../../../data/baseline_networks/chloe_ppi_lcc_2026_02_23.csv", sep=',', names=['source', 'target'], dtype=str)
-# use_vids is essential so that igraph assigns its own vertex ids and stores the IDs before as an attribure called name
-G_ig_ppi = ig.Graph.DataFrame(df[['source', 'target']], directed=False, use_vids=False)
-
-
-df = pd.read_csv("../../../data/baseline_networks/null_models/chloe_ppi_erdos_renyi.csv", sep=',', names=['source', 'target'], dtype=str)
-G_ig_ppi_er = ig.Graph.DataFrame(df[['source', 'target']], directed=False, use_vids=False)
-
-df = pd.read_csv("../../../data/baseline_networks/null_models/chloe_ppi_configuration_model.csv", sep=',', names=['source', 'target'], dtype=str)
-G_ig_ppi_config = ig.Graph.DataFrame(df[['source', 'target']], directed=False, use_vids=False)
-
-df = pd.read_csv("../../../data/baseline_networks/null_models/chloe_ppi_sbm.csv", sep=',', names=['source', 'target'], dtype=str)
-G_ig_ppi_sbm = ig.Graph.DataFrame(df[['source', 'target']], directed=False, use_vids=False)
+G_ig_ppi = load_graph("../../../data/baseline_networks/ppi.csv")
+G_ig_ppi_er = load_graph("../../../data/baseline_networks/null_models/ppi_er.csv")
+G_ig_ppi_config = load_graph("../../../data/baseline_networks/null_models/ppi_conf.csv")
+G_ig_ppi_sbm = load_graph("../../../data/baseline_networks/null_models/ppi_sbm.csv")
 
 ############################################
 # Western US Power Grid Network & Null Models
 
-df = pd.read_csv("../../../data/baseline_networks/western_us_power_grid.csv", sep=',', names=['source', 'target'], dtype=str)
-G_ig_power = ig.Graph.DataFrame(df[['source', 'target']], directed=False, use_vids=False)
-
-df = pd.read_csv("../../../data/baseline_networks/null_models/western_us_power_grid_erdos_renyi.csv", sep=',', names=['source', 'target'], dtype=str)
-G_ig_power_er = ig.Graph.DataFrame(df[['source', 'target']], directed=False, use_vids=False)
-
-df = pd.read_csv("../../../data/baseline_networks/null_models/western_us_power_grid_configuration_model.csv", sep=',', names=['source', 'target'], dtype=str)
-G_ig_power_config = ig.Graph.DataFrame(df[['source', 'target']], directed=False, use_vids=False)
-
-df = pd.read_csv("../../../data/baseline_networks/null_models/western_us_power_grid_sbm.csv", sep=',', names=['source', 'target'], dtype=str)
-G_ig_power_sbm = ig.Graph.DataFrame(df[['source', 'target']], directed=False, use_vids=False)
-
+G_ig_power = load_graph("../../../data/baseline_networks/power.csv")
+G_ig_power_er = load_graph("../../../data/baseline_networks/null_models/power_er.csv")
+G_ig_power_config = load_graph("../../../data/baseline_networks/null_models/power_conf.csv")
+G_ig_power_sbm = load_graph("../../../data/baseline_networks/null_models/power_sbm.csv")
 
 ############################################
 # Astrophysics Collaboration Network & Null Models
 
-df = pd.read_csv("../../../data/baseline_networks/ca-AstroPh_gcc.csv", sep=',', names=['source', 'target'], dtype=str)
-G_ig_astro = ig.Graph.DataFrame(df[['source', 'target']], directed=False, use_vids=False)
-
-df = pd.read_csv("../../../data/baseline_networks/null_models/ca-AstroPh_erdos_renyi.csv", sep=',', names=['source', 'target'], dtype=str)
-G_ig_astro_er = ig.Graph.DataFrame(df[['source', 'target']], directed=False, use_vids=False)
-
-df = pd.read_csv("../../../data/baseline_networks/null_models/ca-AstroPh_configuration_model.csv", sep=',', names=['source', 'target'], dtype=str)
-G_ig_astro_config = ig.Graph.DataFrame(df[['source', 'target']], directed=False, use_vids=False)
-
-df = pd.read_csv("../../../data/baseline_networks/null_models/ca-AstroPh_sbm.csv", sep=',', names=['source', 'target'], dtype=str)
-G_ig_astro_sbm = ig.Graph.DataFrame(df[['source', 'target']], directed=False, use_vids=False)
+G_ig_astro = load_graph("../../../data/baseline_networks/astro.csv")
+G_ig_astro_er = load_graph("../../../data/baseline_networks/null_models/astro_er.csv")
+G_ig_astro_config = load_graph("../../../data/baseline_networks/null_models/astro_conf.csv")
+G_ig_astro_sbm = load_graph("../../../data/baseline_networks/null_models/astro_sbm.csv")
 
 ############################################
 # Wikipedia Vote Network & Null Models
 
-df = pd.read_csv("../../../data/baseline_networks/wiki-Vote_gcc.csv", sep=',', names=['source', 'target'], dtype=str)
-G_ig_wiki = ig.Graph.DataFrame(df[['source', 'target']], directed=False, use_vids=False)
-
-df = pd.read_csv("../../../data/baseline_networks/null_models/wiki-Vote_erdos_renyi.csv", sep=',', names=['source', 'target'], dtype=str)
-G_ig_wiki_er = ig.Graph.DataFrame(df[['source', 'target']], directed=False, use_vids=False)
-
-df = pd.read_csv("../../../data/baseline_networks/null_models/wiki-Vote_configuration_model.csv", sep=',', names=['source', 'target'], dtype=str)
-G_ig_wiki_config = ig.Graph.DataFrame(df[['source', 'target']], directed=False, use_vids=False)
-
-df = pd.read_csv("../../../data/baseline_networks/null_models/wiki-Vote_sbm.csv", sep=',', names=['source', 'target'], dtype=str)
-G_ig_wiki_sbm = ig.Graph.DataFrame(df[['source', 'target']], directed=False, use_vids=False)
+G_ig_wiki = load_graph("../../../data/baseline_networks/wiki.csv")
+G_ig_wiki_er = load_graph("../../../data/baseline_networks/null_models/wiki_er.csv")
+G_ig_wiki_config = load_graph("../../../data/baseline_networks/null_models/wiki_conf.csv")
+G_ig_wiki_sbm = load_graph("../../../data/baseline_networks/null_models/wiki_sbm.csv")
 
 # -------------------------------------------------------------------------
 # 2. Graphs to benchmark

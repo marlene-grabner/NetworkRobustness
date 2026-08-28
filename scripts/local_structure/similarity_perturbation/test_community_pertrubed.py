@@ -18,7 +18,7 @@ def main():
     npz_data = np.load(args.baseline_npz, allow_pickle=True)
     baseline_labels = npz_data['labels']
     node_order = npz_data['node_order']
-    
+
     # Rebuild the exact dictionary mapping from the NPZ file
     N = len(node_order)
     node_to_idx = {str(node): i for i, node in enumerate(node_order)}
@@ -34,10 +34,10 @@ def main():
     # 3. Hand off to your core package
     seeds = [73942, 18405, 92051, 46138, 55920, 23084, 81763, 34591, 60247, 98316] # Define your seeds
     results = evaluate_network_repeats(
-        df_pert=df_pert, 
-        n_nodes=N, 
-        algo=args.algorithm, 
-        seeds=seeds, 
+        df_pert=df_pert,
+        n_nodes=N,
+        algo=args.algorithm,
+        seeds=seeds,
         baseline_labels=baseline_labels,
         n_jobs=args.n_jobs
     )

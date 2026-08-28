@@ -17,23 +17,24 @@ def analyze_community_npz(file_path):
     """
     # 1. Load the .npz file
     data = np.load(file_path)
-    
-    # NPZ files store arrays in a dictionary format. 
-    keys = data.files
-    labels = data[keys[0]]  # Assuming labels are the first array, shape: (n_runs, n_nodes)
-    
+
+    labels = data['labels']  # shape: (n_runs, n_nodes); degree-0 nodes are -1
     n_runs, n_nodes = labels.shape
-    
+
     # Initialize lists to store metrics for each run/pair
     aris = []
     num_communities = []
     avg_comm_sizes = []
     num_singletons = []
-    
+
     # 2. Calculate Pairwise ARI (Stability)
+    # Degree-0 nodes are labeled -1 in both runs (same baseline network on both
+    # sides), so masking on -1 excludes them - they're trivially "stable"
+    # singletons in every run and would otherwise inflate the agreement score.
     # Get all unique pairs of runs (e.g., 20 runs = 190 pairs)
     for i, j in combinations(range(n_runs), 2):
-        ari = adjusted_rand_score(labels[i], labels[j])
+        valid = (labels[i] != -1) & (labels[j] != -1)
+        ari = adjusted_rand_score(labels[i][valid], labels[j][valid]) if valid.any() else np.nan
         aris.append(ari)
         
     # 3. Calculate Community Structural Stats per run

@@ -18,23 +18,7 @@ from NoiseEffect.CommunityDetection.detection_algorithms import (
     louvainPartioning,
     labelPropagationPartitioning,
 )
-
-
-def extract_node_mapping(df: pd.DataFrame) -> tuple[Dict[str, int], List[str]]:
-    """
-    Extracts unique nodes from an edgelist and maps them to contiguous 0-based integers.
-    
-    Args:
-        df: Pandas DataFrame containing 'source' and 'target' columns.
-        
-    Returns:
-        A tuple containing:
-        - Dictionary mapping original string IDs to integer indices.
-        - List of the original string IDs (where list index == integer mapped ID).
-    """
-    unique_nodes = sorted(list(set(df['source']) | set(df['target'])))
-    node_to_idx = {node: idx for idx, node in enumerate(unique_nodes)}
-    return node_to_idx, unique_nodes
+from NoiseEffect.CommunityDetection.utils import load_isolated_nodes, build_full_graph, mask_isolated_nodes
 
 
 def run_community_detection(ig_base: ig.Graph, algorithm: str, seeds: List[int], parameters: Dict[str, Any]) -> Dict[int, List[set]]:
@@ -111,22 +95,23 @@ def generate_baseline_npz(
         
         # 1. Load data safely as strings
         df = pd.read_csv(csv_path, names=['source', 'target'], dtype=str)
-        
-        # 2. Extract strict mapping and align the dataframe
-        node_to_idx, unique_nodes = extract_node_mapping(df)
-        df['source'] = df['source'].map(node_to_idx)
-        df['target'] = df['target'].map(node_to_idx)
-        
-        # 3. Build igraph object
-        ig_base = ig.Graph.DataFrame(df, directed=False)
-        
-        # 4. Execute Community Detection
+
+        # 2. Build the graph over the complete node universe: edgelist nodes plus
+        # any degree-0 nodes recorded in the null model's isolated-nodes sidecar
+        # CSV (edgelists can't represent nodes with no edges).
+        isolated_nodes = load_isolated_nodes(csv_path)
+        ig_base, unique_nodes, has_edge = build_full_graph(df, isolated_nodes)
+
+        # 3. Execute Community Detection
         partitions = run_community_detection(ig_base, algorithm, seeds, parameters)
-        
-        # 5. Convert partitions to a 2D dense mathematical matrix
+
+        # 4. Convert partitions to a 2D dense mathematical matrix, then stamp -1
+        # back onto degree-0 nodes so downstream ARI comparisons can mask them
+        # out just by filtering on -1 (see mask_isolated_nodes).
         labels_matrix = build_label_matrix(partitions, seeds, len(unique_nodes))
-        
-        # 6. Save matrix alongside the coordinate mapping (node_order)
+        labels_matrix = mask_isolated_nodes(labels_matrix, has_edge)
+
+        # 5. Save matrix alongside the coordinate mapping (node_order)
         out_path = os.path.join(out_dir, f"{net_name}_{algorithm}.npz")
         np.savez(out_path, labels=labels_matrix, node_order=unique_nodes)
         print(f"Successfully saved {out_path}")
@@ -134,22 +119,22 @@ def generate_baseline_npz(
 
 if __name__ == "__main__":
     baselines = {
-        "ppi": "data/baseline_networks/chloe_ppi_lcc_2026_02_23.csv",
-        "astro": "data/baseline_networks/ca-AstroPh_gcc.csv",
-        "power":"data/baseline_networks/western_us_power_grid.csv",
-        "wiki": "data/baseline_networks/wiki-Vote_gcc.csv",
-        "ppi_er": "data/baseline_networks/null_models/chloe_ppi_erdos_renyi.csv",
-        "ppi_conf": "data/baseline_networks/null_models/chloe_ppi_configuration_model.csv",
-        "ppi_sbm": "data/baseline_networks/null_models/chloe_ppi_sbm.csv",
-        "astro_er": "data/baseline_networks/null_models/ca-AstroPh_erdos_renyi.csv",
-        "astro_conf": "data/baseline_networks/null_models/ca-AstroPh_configuration_model.csv",
-        "astro_sbm": "data/baseline_networks/null_models/ca-AstroPh_sbm.csv",
-        "power_er": "data/baseline_networks/null_models/western_us_power_grid_erdos_renyi.csv",
-        "power_conf": "data/baseline_networks/null_models/western_us_power_grid_configuration_model.csv",
-        "power_sbm": "data/baseline_networks/null_models/western_us_power_grid_sbm.csv",
-        "wiki_er": "data/baseline_networks/null_models/wiki-Vote_erdos_renyi.csv",
-        "wiki_conf": "data/baseline_networks/null_models/wiki-Vote_configuration_model.csv",
-        "wiki_sbm": "data/baseline_networks/null_models/wiki-Vote_sbm.csv"
+        "ppi": "data/baseline_networks/ppi.csv",
+        "astro": "data/baseline_networks/astro.csv",
+        "power": "data/baseline_networks/power.csv",
+        "wiki": "data/baseline_networks/wiki.csv",
+        "ppi_er": "data/baseline_networks/null_models/ppi_er.csv",
+        "ppi_conf": "data/baseline_networks/null_models/ppi_conf.csv",
+        "ppi_sbm": "data/baseline_networks/null_models/ppi_sbm.csv",
+        "astro_er": "data/baseline_networks/null_models/astro_er.csv",
+        "astro_conf": "data/baseline_networks/null_models/astro_conf.csv",
+        "astro_sbm": "data/baseline_networks/null_models/astro_sbm.csv",
+        "power_er": "data/baseline_networks/null_models/power_er.csv",
+        "power_conf": "data/baseline_networks/null_models/power_conf.csv",
+        "power_sbm": "data/baseline_networks/null_models/power_sbm.csv",
+        "wiki_er": "data/baseline_networks/null_models/wiki_er.csv",
+        "wiki_conf": "data/baseline_networks/null_models/wiki_conf.csv",
+        "wiki_sbm": "data/baseline_networks/null_models/wiki_sbm.csv"
     }
 
     for algorithm in ["leiden", "louvain", "infomap", "label_propagation"]:

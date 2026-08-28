@@ -1,7 +1,8 @@
 import igraph as ig
 import networkx as nx
 import itertools
-from NoiseEffect.CommunityDetection.utils import convertPartitionToLabels, getMetrics
+import numpy as np
+from NoiseEffect.CommunityDetection.utils import convertPartitionToLabels, getMetrics, mask_isolated_nodes
 from NoiseEffect.CommunityDetection.detection_algorithms import (
     leidenAlgorithmPartioning,
     infomapAlgorithmPartioning,
@@ -53,15 +54,19 @@ def benchmarkBaselineStabilityAlgorithm(ig_graph: ig.Graph, list_of_seeds: list[
     else:
         raise ValueError(f"Unknown algorithm: {algorithm}")
 
-    labels = []
-    for seed, partition in partitions.items():
-        labels.append(convertPartitionToLabels(partition, num_nodes))
+    labels = np.stack([
+        convertPartitionToLabels(partition, num_nodes) for partition in partitions.values()
+    ])
+    # Community detection runs over the complete graph (including degree-0
+    # nodes), which get placed in trivial singleton communities of their own;
+    # stamp -1 back onto them so getMetrics' -1 filtering excludes them.
+    has_edge = np.array(ig_graph.degree()) > 0
+    labels = mask_isolated_nodes(labels, has_edge)
 
     all_ordered_pairs = itertools.combinations(labels, 2)
 
     results = []
     for pair in all_ordered_pairs:
-        # *pair unpacks the tuple (e.g., (10, 20)) into two arguments
         result = getMetrics(*pair)
         results.append(result)
     return results
