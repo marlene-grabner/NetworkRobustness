@@ -1,0 +1,17 @@
+network,edgelist_path
+astro,data/baseline_networks/astro.csv
+astro_conf,data/baseline_networks/null_models/astro_conf.csv
+astro_er,data/baseline_networks/null_models/astro_er.csv
+astro_sbm,data/baseline_networks/null_models/astro_sbm.csv
+power,data/baseline_networks/power.csv
+power_conf,data/baseline_networks/null_models/power_conf.csv
+power_er,data/baseline_networks/null_models/power_er.csv
+power_sbm,data/baseline_networks/null_models/power_sbm.csv
+ppi,data/baseline_networks/ppi.csv
+ppi_conf,data/baseline_networks/null_models/ppi_conf.csv
+ppi_er,data/baseline_networks/null_models/ppi_er.csv
+ppi_sbm,data/baseline_networks/null_models/ppi_sbm.csv
+wiki,data/baseline_networks/wiki.csv
+wiki_conf,data/baseline_networks/null_models/wiki_conf.csv
+wiki_er,data/baseline_networks/null_models/wiki_er.csv
+wiki_sbm,data/baseline_networks/null_models/wiki_sbm.csv
