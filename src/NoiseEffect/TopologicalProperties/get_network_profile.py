@@ -60,6 +60,7 @@ def get_network_profile(G, metrics_on_gcc=True, verbose=False):
     # -------- Degree statistics (on H) --------
     log("Degree statistics...")
     degrees = np.array([d for _, d in H.degree()])
+    average_degree = float(np.mean(degrees)) if n > 0 else 0.0
     deg_skew = float(stats.skew(degrees))
     deg_cv = float(np.std(degrees) / np.mean(degrees)) if degrees.mean() > 0 else 0.0
     assortativity = nx.degree_assortativity_coefficient(H)
@@ -95,6 +96,7 @@ def get_network_profile(G, metrics_on_gcc=True, verbose=False):
         "Metrics_Scope": metrics_scope,
         "Nodes": n,
         "Edges": m,
+        "Average_Degree": average_degree,
         "Density": density,
         "Degree_Skew": deg_skew,
         "Degree_CV": deg_cv,
