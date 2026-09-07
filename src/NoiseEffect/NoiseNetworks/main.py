@@ -16,6 +16,7 @@ def generateNoiseNetworksFromBaseline(
     path_to_edgelist: str,
     folder_to_save_perturbed: str,
     noise_levels: list[float],
+    path_to_nodelist: str | None = None,
     noise_types: list[str] = [
         "added_edges",
         "removed_edges",
@@ -37,13 +38,17 @@ def generateNoiseNetworksFromBaseline(
     :type folder_to_save_perturbed: str
     :param noise_levels: List of noise levels to apply
     :type noise_levels: list[float]
+    :param path_to_nodelist: Optional path to a nodelist file. If provided, it will be used to add degree-0 nodes not present in an edgelist.
+    :type path_to_nodelist: str | None
+    :param noise_types: List of noise types to apply. Optional, defaults to all types
+    :type noise_types: list[str]
     :param num_repeats_per_noise_level: Number of repeats per noise level. Optional, defaults to 10
     :type num_repeats_per_noise_level: int
-    :param network_name: Information on the main network, will be included in the file name of the pertrubed networks. Optional, defaults to "network"
+    :param network_name: Information on the main network, will be included in the file name of the perturbed networks. Optional, defaults to "network"
     :type network_name: str
     """
     # Load the baseline network
-    g, idx_to_node, node_to_idx = _loadBaseline(path_to_edgelist)
+    g, idx_to_node, node_to_idx = _loadBaseline(path_to_edgelist, path_to_nodelist)
     graph_info = {
         "degrees": dict(g.degree()),
         "nodes": list(g.nodes()),
@@ -96,7 +101,7 @@ def generateNoiseNetworksFromBaseline(
 # 2. Loading the baseline network
 
 
-def _loadBaseline(path_to_edgelist: str):
+def _loadBaseline(path_to_edgelist: str, path_to_nodelist: str | None = None):
     """
     Loads the baseline network from an edgelist file and creates
     mappings between original node labels and integer indices.
@@ -107,6 +112,17 @@ def _loadBaseline(path_to_edgelist: str):
     """
     # Required params: path (file path to edgelist)
     g_raw = nx.read_edgelist(path_to_edgelist)
+    # optionally add degree-0 nodes
+    if path_to_nodelist is not None:
+        with open(path_to_nodelist) as f:
+            content = f.read().strip()
+            all_nodes = content.split(",") if content else []
+        g_raw.add_nodes_from(n.strip() for n in all_nodes if n.strip())
+    # Ensure all nodes are strings
+    if not all(isinstance(n, str) for n in g_raw.nodes()):
+       raise TypeError("All node labels must be strings; got mixed/non-string types.")
+    # Show the full node set was loaded
+    print(f"Loaded {g_raw.number_of_nodes()} nodes and {g_raw.number_of_edges()} edges from the edgelist.")
     # Sorting the nodes to make the mapping always the same
     original_node_labels = sorted(list(g_raw.nodes()))
     # Create the forward and reverse mappings
