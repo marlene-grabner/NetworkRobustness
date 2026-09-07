@@ -4,6 +4,18 @@ import pandas as pd
 import igraph as ig
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
+def _true_baseline_node_count(baseline_path):
+    df_base = pd.read_csv(baseline_path, sep='\t', header=None, names=['source', 'target'])
+    nodes = set(df_base['source']).union(set(df_base['target']))
+    # union in isolated nodes from the sidecar, if one exists
+    sidecar = baseline_path.rsplit('.', 1)[0] + '_isolated_nodes.csv'
+    if os.path.exists(sidecar):
+        with open(sidecar) as f:
+            content = f.read().strip()
+        if content:
+            nodes |= {n.strip() for n in content.split(',') if n.strip()}
+    return len(nodes)
+
 def _process_singletons_and_gcc(file_path: str, total_baseline_nodes: int) -> list:
     """
     Worker function to process a single parquet file (100 repeats) for fast metrics.
@@ -61,8 +73,7 @@ def calculate_singletons_and_gcc(baseline_path: str, perturbed_dir: str, max_wor
     Calculate singletons and GCC using Multiprocessing.
     """
     # Load baseline efficiently to get node count
-    df_base = pd.read_csv(baseline_path, sep='\t', header=None, names=['source', 'target'])
-    total_baseline_nodes = len(set(df_base['source']).union(set(df_base['target'])))
+    total_baseline_nodes =  _true_baseline_node_count(baseline_path)
     
     parquet_files = glob.glob(os.path.join(perturbed_dir, "*.parquet"))
     all_results = []
