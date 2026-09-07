@@ -15,22 +15,22 @@ noise_levels_added = [0.05, 0.10, 0.15, 0.20, 0.30, 0.50, 1.00, 1.50, 2.00]
 # Paths of unperturbed baseline networks
 #########################################
 baseline_files = {
-    "chloe_ppi_lcc_2026_02_23": "./data/baseline_networks/chloe_ppi_lcc_2026_02_23.tsv",
-    "chloe_ppi_lcc_2026_02_23_er": "./data/baseline_networks/null_models/chloe_ppi_erdos_renyi.tsv",
-    "chloe_ppi_lcc_2026_02_23_config": "./data/baseline_networks/null_models/chloe_ppi_configuration_model.tsv",
-    "chloe_ppi_lcc_2026_02_23_sbm": "./data/baseline_networks/null_models/chloe_ppi_sbm.tsv",
-    "western_us_power_grid": "./data/baseline_networks/western_us_power_grid.tsv",
-    "western_us_power_grid_er": "./data/baseline_networks/null_models/western_us_power_grid_erdos_renyi.tsv",
-    "western_us_power_grid_config": "./data/baseline_networks/null_models/western_us_power_grid_configuration_model.tsv",
-    "western_us_power_grid_sbm": "./data/baseline_networks/null_models/western_us_power_grid_sbm.tsv",
-    "ca-AstroPH_gcc": "./data/baseline_networks/ca-AstroPh_gcc.tsv",
-    "ca-AstroPH_gcc_er": "./data/baseline_networks/null_models/ca-AstroPh_erdos_renyi.tsv",
-    "ca-AstroPH_gcc_config": "./data/baseline_networks/null_models/ca-AstroPh_configuration_model.tsv",
-    "ca-AstroPH_gcc_sbm": "./data/baseline_networks/null_models/ca-AstroPh_sbm.tsv",
-    "wiki-Vote_gcc": "./data/baseline_networks/wiki-Vote_gcc.tsv",
-    "wiki-Vote_gcc_er": "./data/baseline_networks/null_models/wiki-Vote_erdos_renyi.tsv",
-    "wiki-Vote_gcc_config": "./data/baseline_networks/null_models/wiki-Vote_configuration_model.tsv",
-    "wiki-Vote_gcc_sbm": "./data/baseline_networks/null_models/wiki-Vote_sbm.tsv"
+    "chloe_ppi_lcc_2026_02_23": "./data/baseline_networks/old_tsv_networks/chloe_ppi_lcc_2026_02_23.tsv",
+    "chloe_ppi_lcc_2026_02_23_er": "./data/baseline_networks/old_tsv_networks/null_models/chloe_ppi_erdos_renyi.tsv",
+    "chloe_ppi_lcc_2026_02_23_config": "./data/baseline_networks/old_tsv_networks/null_models/chloe_ppi_configuration_model.tsv",
+    "chloe_ppi_lcc_2026_02_23_sbm": "./data/baseline_networks/old_tsv_networks/null_models/chloe_ppi_sbm.tsv",
+    "western_us_power_grid": "./data/baseline_networks/old_tsv_networks/western_us_power_grid.tsv",
+    "western_us_power_grid_er": "./data/baseline_networks/old_tsv_networks/null_models/western_us_power_grid_erdos_renyi.tsv",
+    "western_us_power_grid_config": "./data/baseline_networks/old_tsv_networks/null_models/western_us_power_grid_configuration_model.tsv",
+    "western_us_power_grid_sbm": "./data/baseline_networks/old_tsv_networks/null_models/western_us_power_grid_sbm.tsv",
+    "ca-AstroPH_gcc": "./data/baseline_networks/old_tsv_networks/ca-AstroPh_gcc.tsv",
+    "ca-AstroPH_gcc_er": "./data/baseline_networks/old_tsv_networks/null_models/ca-AstroPh_erdos_renyi.tsv",
+    "ca-AstroPH_gcc_config": "./data/baseline_networks/old_tsv_networks/null_models/ca-AstroPh_configuration_model.tsv",
+    "ca-AstroPH_gcc_sbm": "./data/baseline_networks/old_tsv_networks/null_models/ca-AstroPh_sbm.tsv",
+    "wiki-Vote_gcc": "./data/baseline_networks/old_tsv_networks/wiki-Vote_gcc.tsv",
+    "wiki-Vote_gcc_er": "./data/baseline_networks/old_tsv_networks/null_models/wiki-Vote_erdos_renyi.tsv",
+    "wiki-Vote_gcc_config": "./data/baseline_networks/old_tsv_networks/null_models/wiki-Vote_configuration_model.tsv",
+    "wiki-Vote_gcc_sbm": "./data/baseline_networks/old_tsv_networks/null_models/wiki-Vote_sbm.tsv"
 }
 
 # Paths of output folders for random perturbations
@@ -94,6 +94,28 @@ output_folders_periphery_targeted = {
     "wiki-Vote_gcc_er": "./data/perturbed_networks/wiki-Vote_erdos_renyi/perturbed_periphery_target",
     "wiki-Vote_gcc_config": "./data/perturbed_networks/wiki-Vote_configuration_model/perturbed_periphery_target",
     "wiki-Vote_gcc_sbm": "./data/perturbed_networks/wiki-Vote_sbm/perturbed_periphery_target"
+}
+
+# Paths to degree-0 node lists
+#########################################
+
+nodelist_files = {
+    "chloe_ppi_lcc_2026_02_23": None,
+    "chloe_ppi_lcc_2026_02_23_er": None,
+    "chloe_ppi_lcc_2026_02_23_config": None,
+    "chloe_ppi_lcc_2026_02_23_sbm": "./data/baseline_networks/old_tsv_networks/null_models/chloe_ppi_sbm_isolated_nodes.csv",
+    "western_us_power_grid": None,
+    "western_us_power_grid_er": "./data/baseline_networks/old_tsv_networks/null_models/western_us_power_grid_erdos_renyi_isolated_nodes.csv",
+    "western_us_power_grid_config": None,
+    "western_us_power_grid_sbm": "./data/baseline_networks/old_tsv_networks/null_models/western_us_power_grid_sbm_isolated_nodes.csv",
+    "ca-AstroPH_gcc": None,
+    "ca-AstroPH_gcc_er": None,
+    "ca-AstroPH_gcc_config": None,
+    "ca-AstroPH_gcc_sbm": "data/baseline_networks/old_tsv_networks/null_models/ca-AstroPh_sbm_isolated_nodes.csv",
+    "wiki-Vote_gcc": None,
+    "wiki-Vote_gcc_er": None,
+    "wiki-Vote_gcc_config": None,
+    "wiki-Vote_gcc_sbm": "data/baseline_networks/old_tsv_networks/null_models/wiki-Vote_sbm_isolated_nodes.csv",
 }
 
 
