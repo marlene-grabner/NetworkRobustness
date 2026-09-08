@@ -1,4 +1,4 @@
-from NoiseEffect import calculate_singletons_and_gcc
+from NoiseEffect import calculate_singletons_and_gcc, true_baseline_node_count
 from pathlib import Path
 import os
 import igraph as ig
@@ -43,24 +43,6 @@ perturbed_folders = {
     "wiki_sbm": "data/perturbed_networks/wiki_sbm"
 }
 
-#########################################################
-# To integrate degree-0 nodes in total node count
-# (lost on baseline in SBM and ER)
-###########################################################
-
-def _true_baseline_node_count(baseline_path):
-    df_base = pd.read_csv(baseline_path, sep='\t', header=None, names=['source', 'target'])
-    nodes = set(df_base['source']).union(set(df_base['target']))
-    # union in isolated nodes from the sidecar, if one exists
-    sidecar = baseline_path.rsplit('.', 1)[0] + '_isolated_nodes.csv'
-    if os.path.exists(sidecar):
-        with open(sidecar) as f:
-            content = f.read().strip()
-        if content:
-            nodes |= {n.strip() for n in content.split(',') if n.strip()}
-    return len(nodes)
-
-
 if __name__ == '__main__':
     # Grab the number of CPUs from Slurm, default to 4 if running locally
     num_workers = int(os.environ.get('SLURM_CPUS_PER_TASK', 4))
@@ -81,7 +63,7 @@ if __name__ == '__main__':
         # ---------------------------------------------------------
         # Load baseline to get total nodes and calculate its GCC
         df_base = pd.read_csv(baseline_tsv, sep='\t', header=None, names=['source', 'target'])
-        total_baseline_nodes = _true_baseline_node_count(baseline_tsv)
+        total_baseline_nodes = true_baseline_node_count(baseline_tsv)
         
         # Build baseline igraph
         g_base = ig.Graph.TupleList(df_base.values.tolist(), directed=False)
