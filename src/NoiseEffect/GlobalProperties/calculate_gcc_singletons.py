@@ -5,19 +5,12 @@ import igraph as ig
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 
-def true_baseline_node_count(baseline_path: str) -> int:
-    """
-    Total node count for a baseline edgelist, including nodes that have no
-    edges at all (e.g. degree-0 nodes dropped by SBM/ER generation), which
-    are recorded in a "<baseline_path>_isolated_nodes.csv" sidecar file if
-    one exists. Without this, GCC fraction would be computed against a
-    smaller-than-true universe for any network with isolated nodes.
-    """
+def _true_baseline_node_count(baseline_path):
     df_base = pd.read_csv(
         baseline_path, sep="\t", header=None, names=["source", "target"]
     )
     nodes = set(df_base["source"]).union(set(df_base["target"]))
-
+    # union in isolated nodes from the sidecar, if one exists
     sidecar = baseline_path.rsplit(".", 1)[0] + "_isolated_nodes.csv"
     if os.path.exists(sidecar):
         with open(sidecar) as f:
@@ -90,9 +83,8 @@ def calculate_singletons_and_gcc(
     """
     Calculate singletons and GCC using Multiprocessing.
     """
-    # Load baseline efficiently to get node count (including isolated nodes
-    # dropped from the edgelist, so this matches the baseline row's denominator)
-    total_baseline_nodes = true_baseline_node_count(baseline_path)
+    # Load baseline efficiently to get node count
+    total_baseline_nodes = _true_baseline_node_count(baseline_path)
 
     parquet_files = glob.glob(os.path.join(perturbed_dir, "*.parquet"))
     all_results = []
