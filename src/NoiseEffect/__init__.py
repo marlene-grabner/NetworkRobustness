@@ -4,7 +4,7 @@ from .NoiseNetworks import generateNoiseNetworksFromBaseline
 from .ModuleRecovery import benchmarkModuleDetectionAlgorithms
 from .SeedStrucutralMetrics import computeSeedStrucutralMetrics
 from .CompareModules import compareModules
-from .GlobalProperties import calculate_singletons_and_gcc, _process_singletons_and_gcc
+from .GlobalProperties import calculate_singletons_and_gcc, _process_singletons_and_gcc, true_baseline_node_count
 from . import GlobalProperties
 from . import SeedExpansion
 from . import utils
