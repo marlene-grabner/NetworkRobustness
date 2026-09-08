@@ -5,7 +5,7 @@ import igraph as ig
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 
-def _true_baseline_node_count(baseline_path):
+def true_baseline_node_count(baseline_path):
     df_base = pd.read_csv(
         baseline_path, sep="\t", header=None, names=["source", "target"]
     )
@@ -84,7 +84,7 @@ def calculate_singletons_and_gcc(
     Calculate singletons and GCC using Multiprocessing.
     """
     # Load baseline efficiently to get node count
-    total_baseline_nodes = _true_baseline_node_count(baseline_path)
+    total_baseline_nodes = true_baseline_node_count(baseline_path)
 
     parquet_files = glob.glob(os.path.join(perturbed_dir, "*.parquet"))
     all_results = []
