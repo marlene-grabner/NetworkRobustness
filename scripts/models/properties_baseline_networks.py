@@ -14,15 +14,17 @@ G_ppi = nx.read_edgelist(networks_path + "ppi.csv", delimiter=",")
 G_power = nx.read_edgelist(networks_path + "power.csv", delimiter=",")
 G_collab = nx.read_edgelist(networks_path + "astro.csv", delimiter=",")
 G_wiki = nx.read_edgelist(networks_path + "wiki.csv", delimiter=",")
+G_huri = nx.read_edgelist(networks_path + "huri.csv", delimiter=",")
 
 
 prop_ppi = TopologicalProperties.get_network_profile(G_ppi)
 prop_power = TopologicalProperties.get_network_profile(G_power)
 prop_collab = TopologicalProperties.get_network_profile(G_collab)
 prop_wiki = TopologicalProperties.get_network_profile(G_wiki)
+prop_huri = TopologicalProperties.get_network_profile(G_huri)
 
 
-df = pd.DataFrame.from_dict([prop_ppi, prop_power, prop_collab, prop_wiki]).T
+df = pd.DataFrame.from_dict([prop_ppi, prop_power, prop_collab, prop_wiki, prop_huri]).T
 
 df.rename(
     columns={
@@ -30,6 +32,7 @@ df.rename(
         1: "Western US Power Grid Network",
         2: "Astrophysics Collaboration Network",
         3: "Wikipedia Vote Network",
+        4: "Human Reference Interactome (HuRI)",
     },
     inplace=True,
 )
@@ -89,5 +92,14 @@ TopologicalProperties.plot_degree_distribution(
     log_binning=True,
     fit_trend=True,
     color="#E8AD0C",
+    marker="o",
+)
+TopologicalProperties.plot_degree_distribution(
+    G_huri,
+    num_bins=40,
+    log_binning=True,
+    fit_trend=True,
+    save_fig="./outputs/models/figures/baseline_properties/degree_distributions/huri_degree_distribution.pdf",
+    color="#1F6F8B",
     marker="o",
 )

@@ -23,11 +23,13 @@ G_power_er.add_nodes_from(n.strip() for n in all_nodes if n.strip())
 ##
 G_collab_er = nx.read_edgelist(networks_path + "astro_er.csv", delimiter=",")
 G_wiki_er = nx.read_edgelist(networks_path + "wiki_er.csv", delimiter=",")
+G_huri_er = nx.read_edgelist(networks_path + "huri_er.csv", delimiter=",")
 
 G_ppi_conf = nx.read_edgelist(networks_path + "ppi_conf.csv", delimiter=",")
 G_power_conf = nx.read_edgelist(networks_path + "power_conf.csv", delimiter=",")
 G_collab_conf = nx.read_edgelist(networks_path + "astro_conf.csv", delimiter=",")
 G_wiki_conf = nx.read_edgelist(networks_path + "wiki_conf.csv", delimiter=",")
+G_huri_conf = nx.read_edgelist(networks_path + "huri_conf.csv", delimiter=",")
 
 G_ppi_sbm = nx.read_edgelist(networks_path + "ppi_sbm.csv", delimiter=",")
 with open(degree_0_nodelists_path + "chloe_ppi_sbm_isolated_nodes.csv") as f:
@@ -54,22 +56,32 @@ with open(degree_0_nodelists_path + "wiki-Vote_sbm_isolated_nodes.csv") as f:
     content = f.read().strip()
     all_nodes = content.split(",") if content else []
 G_wiki_sbm.add_nodes_from(n.strip() for n in all_nodes if n.strip())
+##
+# HuRI sidecar lives next to the csv null models
+G_huri_sbm = nx.read_edgelist(networks_path + "huri_sbm.csv", delimiter=",")
+with open(networks_path + "huri_sbm_isolated_nodes.csv") as f:
+    content = f.read().strip()
+    all_nodes = content.split(",") if content else []
+G_huri_sbm.add_nodes_from(n.strip() for n in all_nodes if n.strip())
 
 
 prop_ppi_er = TopologicalProperties.get_network_profile(G_ppi_er)
 prop_power_er = TopologicalProperties.get_network_profile(G_power_er)
 prop_collab_er = TopologicalProperties.get_network_profile(G_collab_er)
 prop_wiki_er = TopologicalProperties.get_network_profile(G_wiki_er)
+prop_huri_er = TopologicalProperties.get_network_profile(G_huri_er)
 
 prop_ppi_conf = TopologicalProperties.get_network_profile(G_ppi_conf)
 prop_power_conf = TopologicalProperties.get_network_profile(G_power_conf)
 prop_collab_conf = TopologicalProperties.get_network_profile(G_collab_conf)
 prop_wiki_conf = TopologicalProperties.get_network_profile(G_wiki_conf)
+prop_huri_conf = TopologicalProperties.get_network_profile(G_huri_conf)
 
 prop_ppi_sbm = TopologicalProperties.get_network_profile(G_ppi_sbm)
 prop_power_sbm = TopologicalProperties.get_network_profile(G_power_sbm)
 prop_collab_sbm = TopologicalProperties.get_network_profile(G_collab_sbm)
 prop_wiki_sbm = TopologicalProperties.get_network_profile(G_wiki_sbm)
+prop_huri_sbm = TopologicalProperties.get_network_profile(G_huri_sbm)
 
 
 df = pd.DataFrame.from_dict(
@@ -78,14 +90,17 @@ df = pd.DataFrame.from_dict(
         prop_power_er,
         prop_collab_er,
         prop_wiki_er,
+        prop_huri_er,
         prop_ppi_conf,
         prop_power_conf,
         prop_collab_conf,
         prop_wiki_conf,
+        prop_huri_conf,
         prop_ppi_sbm,
         prop_power_sbm,
         prop_collab_sbm,
         prop_wiki_sbm,
+        prop_huri_sbm,
     ]
 ).T
 
@@ -95,14 +110,17 @@ df.rename(
         1: "Power Grid (ER)",
         2: "Astrophysics (ER)",
         3: "Wikipedia (ER)",
-        4: "PPI (Conf)",
-        5: "Power Grid (Conf)",
-        6: "Astrophysics (Conf)",
-        7: "Wikipedia (Conf)",
-        8: "PPI (SBM)",
-        9: "Power Grid (SBM)",
-        10: "Astrophysics (SBM)",
-        11: "Wikipedia (SBM)",
+        4: "HuRI (ER)",
+        5: "PPI (Conf)",
+        6: "Power Grid (Conf)",
+        7: "Astrophysics (Conf)",
+        8: "Wikipedia (Conf)",
+        9: "HuRI (Conf)",
+        10: "PPI (SBM)",
+        11: "Power Grid (SBM)",
+        12: "Astrophysics (SBM)",
+        13: "Wikipedia (SBM)",
+        14: "HuRI (SBM)",
     },
     inplace=True,
 )
