@@ -331,7 +331,9 @@ def _targetedAddition(g: nx.Graph, num_modify: int, target: str, graph_info: dic
 
     # 1. Calculate weights for INDIVIDUAL nodes, not edges!
     if target == "hubs":
-        node_weights = np.array([degrees[n] for n in nodes], dtype=float)
+        # max(..., 1) gives degree-0 nodes the same chance as degree-1 nodes,
+        # so isolated nodes can be reconnected (mirrors periphery weighting).
+        node_weights = np.array([max(degrees[n], 1) for n in nodes], dtype=float)
     elif target == "periphery":
         node_weights = np.array([1.0 / max(degrees[n], 1) for n in nodes], dtype=float)
     else:
