@@ -22,4 +22,4 @@ NETWORKS=(
 NETWORK=${NETWORKS[$SLURM_ARRAY_TASK_ID]}
 
 
-uv run python notebooks_general_analysis/perturbed_networks/generating_perturbed_networks.py $NETWORK
+uv run python scripts/perturbed_networks/generating_perturbed_networks.py $NETWORK
