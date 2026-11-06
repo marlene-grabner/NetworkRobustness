@@ -79,23 +79,39 @@ def diamond_score(adj: sparse.csr_matrix, seed_idx: np.ndarray, max_added_nodes:
         k_in_adjusted = k_in + (alpha - 1) * seed_edges
         k_total_adjusted = k_total + (alpha - 1) * seed_edges
 
-        # Deduplicate candidates before calling hypergeom to save CPU cycles
-        pairs, inverse_idx = np.unique(
-            np.column_stack((k_in_adjusted, k_total_adjusted)), 
-            axis=0, 
-            return_inverse=True
+        # Sort candidates by k_total_adjusted (primary) and k_in_adjusted (secondary)
+        sort_order = np.lexsort((k_in_adjusted, k_total_adjusted))
+        sorted_kt = k_total_adjusted[sort_order]
+
+        # The last element of each contiguous k_total block has the max k_in
+        mask = np.empty(len(sorted_kt), dtype=bool)
+        mask[:-1] = sorted_kt[:-1] != sorted_kt[1:]
+        mask[-1] = True
+
+        max_k_in_indices = sort_order[mask]
+
+        # Compute hypergeom.sf only on max k_in candidates per degree
+        p_reduced = hypergeom.sf(
+            k_in_adjusted[max_k_in_indices] - 1,
+            N_adjusted,
+            s0_adjusted,
+            k_total_adjusted[max_k_in_indices],
         )
 
-        # Run SciPy's hypergeometric test on unique degree pairs
-        p_unique = hypergeom.sf(pairs[:, 0] - 1, N_adjusted, s0_adjusted, pairs[:, 1])
+        # Identify winning degree pair(s) with the minimum p-value
+        min_p = np.min(p_reduced)
+        winning_mask = p_reduced == min_p
+        win_k_in = k_in_adjusted[max_k_in_indices[winning_mask]]
+        win_k_tot = k_total_adjusted[max_k_in_indices[winning_mask]]
 
-        # Map the calculated p-values back to the full candidate array
-        p_values = p_unique[inverse_idx]
+        # Match winning pair(s) back to candidate array
+        is_winner = np.zeros(len(candidates), dtype=bool)
+        for w_in, w_tot in zip(win_k_in, win_k_tot):
+            is_winner |= (k_in_adjusted == w_in) & (k_total_adjusted == w_tot)
 
         # Find the best candidate
-        # Because 'candidates' is sorted, np.argmin automatically breaks ties 
-        # deterministically by picking the node with the lowest global matrix index.
-        best_idx = candidates[np.argmin(p_values)]
+        # np.argmax selects the FIRST True element (lowest global candidate index)
+        best_idx = candidates[np.argmax(is_winner)]
 
         # Add them to the module
         in_module[best_idx] = True
@@ -172,4 +188,36 @@ def diamond_score(adj: sparse.csr_matrix, seed_idx: np.ndarray, max_added_nodes:
         conn_to_module[new_node_neighbors] += 1
         
     return scores
+
+def build_toy_graph():
+    
+    Builds a small 8-node CSR matrix:
+    - Node 0 is the SEED.
+    - Node 1: k_in=1, k_total=3  (Neighbors: 0, 4, 5)
+    - Node 2: k_in=1, k_total=3  (Neighbors: 0, 4, 6)  <-- Ties with Node 1!
+    - Node 3: k_in=1, k_total=4  (Neighbors: 0, 5, 6, 7)
+    
+    edges = [
+        (0, 1), (0, 2), (0, 3), # Seed 0 connected to 1, 2, 3
+        (1, 4), (1, 5),         # Node 1
+        (2, 4), (2, 6),         # Node 2
+        (3, 5), (3, 6), (3, 7)  # Node 3
+    ]
+    
+    rows = [u for u, v in edges] + [v for u, v in edges]
+    cols = [v for u, v in edges] + [u for u, v in edges]
+    data = np.ones(len(rows), dtype=float)
+    
+    return sparse.csr_matrix((data, (rows, cols)), shape=(8, 8))
+
+
+if __name__ == "__main__":
+    adj = build_toy_graph()
+    seed_idx = np.array([0])  # Start with Node 0 as seed
+    
+    final_scores = diamond_score(adj, seed_idx=seed_idx, max_added_nodes=3)
+    
+    print("\n================ FINAL RESULTS ================")
+    print(f"Scores Array: {final_scores}")
+
 """
