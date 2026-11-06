@@ -62,6 +62,7 @@ def classify_job_tier(network_id: str, modification_type: str) -> str:
 
 def main():
     files = sorted(PERTURBED_DIR.glob("*/*/*.parquet"))
+    files = [f for f in files if str(f).split('/')[2] in ['wiki_sbm', 'ppi_sbm', 'power_sbm', 'astro_sbm', 'power_er']]
     if not files:
         raise SystemExit(f"No parquet files found under {PERTURBED_DIR}/*/*/*.parquet")
 

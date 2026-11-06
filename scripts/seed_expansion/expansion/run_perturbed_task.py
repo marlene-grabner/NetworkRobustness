@@ -118,7 +118,7 @@ def main():
                         "noise_level": noise_level,
                         "repeat": repeat_id,
                         "algorithm": algo,
-                        "seed_id": seed_id,  # CRITICAL: Track the seed ID alongside your metrics!
+                        "seed_id": seed_id,  # Track the seed ID
                     })
                     rows.append(r)
 

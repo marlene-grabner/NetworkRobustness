@@ -3,7 +3,7 @@ Scans data/baseline_networks/*.csv and writes a job table, one row per
 (network, algorithm), for the baseline SLURM array.
 
 Usage:
-    python notebooks/generate_baseline_job_table.py
+    python scripts/seed_expansion/expansion/generate_baseline_job_table.py
 """
 from pathlib import Path
 import pandas as pd
