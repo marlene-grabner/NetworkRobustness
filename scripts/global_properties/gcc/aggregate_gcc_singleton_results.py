@@ -5,8 +5,8 @@ import numpy as np
 
 ####################################################################################
 # Parameters: Output CSV location
-output_df_path = "./outputs/global_properties/aggregated_gcc_singletons.csv"
-input_csvs_folder = "./outputs/global_properties/gcc_singletons/csvs"
+output_df_path = "./outputs/global_properties/gcc_singletons/aggregated_gcc_singletons.csv"
+input_csvs_folder = "./outputs/global_properties/gcc_singletons/gcc_singletons_per_network"
 ####################################################################################
 
 ######################

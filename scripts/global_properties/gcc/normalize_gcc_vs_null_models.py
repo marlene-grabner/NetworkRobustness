@@ -111,4 +111,3 @@ df_final.to_csv(output_filename, index=False)
 
 print(f"\nNull-model normalization complete! Saved to {output_filename}")
 print("\nPreview of the normalized DataFrame:")
-print(df_final.head(15).to_string())

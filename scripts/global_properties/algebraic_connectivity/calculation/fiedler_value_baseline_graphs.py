@@ -71,7 +71,7 @@ def calculate_baselines():
             print(f"Failed to process {net_id}: {e}")
 
     # Save outputs
-    out_path = "baseline_algebraic_connectivity.csv"
+    out_path = "./outputs/global_properties/algebraic_connectivity/baseline/baseline_algebraic_connectivity.csv"
     pd.DataFrame(results).to_csv(out_path, index=False)
     print(f"Done computing baselines! Saved to {out_path}")
 

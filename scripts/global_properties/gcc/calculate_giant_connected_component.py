@@ -52,6 +52,11 @@ if __name__ == '__main__':
     out_path.mkdir(parents=True, exist_ok=True)
     
     for key in baseline_tsvs.keys():
+        # DELTE LATER; REDO SBM AND POWER ER
+        if key not in ["ppi_sbm", "astro_sbm", "power_sbm", "wiki_sbm", "wiki_er"]:
+            continue
+        #####
+
         print(f"--- Starting analysis for network: {key} ---")
         
         all_dfs_for_key = [] # Reset the list for each new network

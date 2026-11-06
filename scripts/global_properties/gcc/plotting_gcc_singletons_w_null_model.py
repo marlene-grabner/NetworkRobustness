@@ -6,7 +6,7 @@ import numpy as np
 
 ####################################################################################
 # Parameters
-input_df_path = "./outputs/global_properties/aggregated_gcc_singletons.csv"
+input_df_path = "./outputs/global_properties/gcc_singletons/aggregated_gcc_singletons.csv"
 output_figures_path = "./outputs/global_properties/figures/gcc_singletons/"
 ####################################################################################
 
