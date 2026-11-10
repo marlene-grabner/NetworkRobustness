@@ -1,170 +1,105 @@
-import NoiseEffect as na
-from pathlib import Path
+"""
+Generates the perturbed networks for one network unit: an empirical network
+(core or extended set) or one null model of a core network (all its
+replicates go into the same files).
+
+Output, one file per noise type and level (see NoiseNetworks/main.py):
+  data/perturbed_networks_ensembles/{network}/{empirical|er|conf|sbm}/{noise_type}_{level}.parquet
+  columns: source, target, replicate, repeat
+
+Run from the repository root:
+  uv run python scripts/perturbed_networks/generating_perturbed_networks.py <unit>
+  uv run python scripts/perturbed_networks/generating_perturbed_networks.py --list
+<unit> is a network name (e.g. huri, chicago_road) or a core network and null
+model (e.g. huri_er, power_sbm). --list prints all units, one per line, e.g.
+for a job array.
+"""
+
+import os
 import sys
 
-# Extract the key for network to be analyzed
-baseline_key = sys.argv[1]
+import pandas as pd
 
-noise_levels_removed = [0.02, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.40, 0.50]
-noise_levels_added = [0.05, 0.10, 0.15, 0.20, 0.30, 0.50, 1.00, 1.50, 2.00]
+import NoiseEffect as na
 
-############################################################
-# File paths
-############################################################
+BASELINE_DIR = "./data/baseline_networks/"
+NULL_DIR = BASELINE_DIR + "null_models/"
+OUT_DIR = "./data/perturbed_networks_ensembles/"
 
-# Paths of unperturbed baseline networks
-#########################################
-baseline_files = {
-    "chloe_ppi_lcc_2026_02_23": "./data/baseline_networks/old_tsv_networks/chloe_ppi_lcc_2026_02_23.tsv",
-    "chloe_ppi_lcc_2026_02_23_er": "./data/baseline_networks/old_tsv_networks/null_models/chloe_ppi_erdos_renyi.tsv",
-    "chloe_ppi_lcc_2026_02_23_config": "./data/baseline_networks/old_tsv_networks/null_models/chloe_ppi_configuration_model.tsv",
-    "chloe_ppi_lcc_2026_02_23_sbm": "./data/baseline_networks/old_tsv_networks/null_models/chloe_ppi_sbm.tsv",
-    "western_us_power_grid": "./data/baseline_networks/old_tsv_networks/western_us_power_grid.tsv",
-    "western_us_power_grid_er": "./data/baseline_networks/old_tsv_networks/null_models/western_us_power_grid_erdos_renyi.tsv",
-    "western_us_power_grid_config": "./data/baseline_networks/old_tsv_networks/null_models/western_us_power_grid_configuration_model.tsv",
-    "western_us_power_grid_sbm": "./data/baseline_networks/old_tsv_networks/null_models/western_us_power_grid_sbm.tsv",
-    "ca-AstroPH_gcc": "./data/baseline_networks/old_tsv_networks/ca-AstroPh_gcc.tsv",
-    "ca-AstroPH_gcc_er": "./data/baseline_networks/old_tsv_networks/null_models/ca-AstroPh_erdos_renyi.tsv",
-    "ca-AstroPH_gcc_config": "./data/baseline_networks/old_tsv_networks/null_models/ca-AstroPh_configuration_model.tsv",
-    "ca-AstroPH_gcc_sbm": "./data/baseline_networks/old_tsv_networks/null_models/ca-AstroPh_sbm.tsv",
-    "wiki-Vote_gcc": "./data/baseline_networks/old_tsv_networks/wiki-Vote_gcc.tsv",
-    "wiki-Vote_gcc_er": "./data/baseline_networks/old_tsv_networks/null_models/wiki-Vote_erdos_renyi.tsv",
-    "wiki-Vote_gcc_config": "./data/baseline_networks/old_tsv_networks/null_models/wiki-Vote_configuration_model.tsv",
-    "wiki-Vote_gcc_sbm": "./data/baseline_networks/old_tsv_networks/null_models/wiki-Vote_sbm.tsv"
-}
+# Core networks get null models (astro.csv has its 59 self-loops removed,
+# like its null models; the original is in baseline_networks/backup/)
+CORE_NETWORKS = ["huri", "power", "astro", "wiki"]
+NULL_MODELS = ["er", "conf", "sbm"]
+N_NULL_REPLICATES = 10
 
-# Paths of output folders for random perturbations
-#########################################
-output_folders_random = {
-    "chloe_ppi_lcc_2026_02_23": "./data/perturbed_networks/chloe_ppi_lcc_2026_02_23/perturbed_random_target",
-    "chloe_ppi_lcc_2026_02_23_er": "./data/perturbed_networks/chloe_ppi_lcc_2026_02_23_erdos_renyi/perturbed_random_target",
-    "chloe_ppi_lcc_2026_02_23_config": "./data/perturbed_networks/chloe_ppi_lcc_2026_02_23_configuration_model/perturbed_random_target",
-    "chloe_ppi_lcc_2026_02_23_sbm": "./data/perturbed_networks/chloe_ppi_lcc_2026_02_23_sbm/perturbed_random_target",
-    "western_us_power_grid": "./data/perturbed_networks/western_us_power_grid/perturbed_random_target",
-    "western_us_power_grid_er": "./data/perturbed_networks/western_us_power_grid_erdos_renyi/perturbed_random_target",
-    "western_us_power_grid_config": "./data/perturbed_networks/western_us_power_grid_configuration_model/perturbed_random_target",
-    "western_us_power_grid_sbm": "./data/perturbed_networks/western_us_power_grid_sbm/perturbed_random_target",
-    "ca-AstroPH_gcc": "./data/perturbed_networks/ca-AstroPh_gcc/perturbed_random_target",
-    "ca-AstroPH_gcc_er": "./data/perturbed_networks/ca-AstroPh_erdos_renyi/perturbed_random_target",
-    "ca-AstroPH_gcc_config": "./data/perturbed_networks/ca-AstroPh_configuration_model/perturbed_random_target",
-    "ca-AstroPH_gcc_sbm": "./data/perturbed_networks/ca-AstroPh_sbm/perturbed_random_target",
-    "wiki-Vote_gcc": "./data/perturbed_networks/wiki-Vote_gcc/perturbed_random_target",
-    "wiki-Vote_gcc_er": "./data/perturbed_networks/wiki-Vote_erdos_renyi/perturbed_random_target",
-    "wiki-Vote_gcc_config": "./data/perturbed_networks/wiki-Vote_configuration_model/perturbed_random_target",
-    "wiki-Vote_gcc_sbm": "./data/perturbed_networks/wiki-Vote_sbm/perturbed_random_target"
-}
+REPEATS_EMPIRICAL = 25
+REPEATS_NULL = 10
 
-# Paths of of output folders for hub-targeted perturbations
-#########################################
-output_folders_hub_targeted = {
-    "chloe_ppi_lcc_2026_02_23": "./data/perturbed_networks/chloe_ppi_lcc_2026_02_23/perturbed_hub_target",
-    "chloe_ppi_lcc_2026_02_23_er": "./data/perturbed_networks/chloe_ppi_lcc_2026_02_23_erdos_renyi/perturbed_hub_target",
-    "chloe_ppi_lcc_2026_02_23_config": "./data/perturbed_networks/chloe_ppi_lcc_2026_02_23_configuration_model/perturbed_hub_target",
-    "chloe_ppi_lcc_2026_02_23_sbm": "./data/perturbed_networks/chloe_ppi_lcc_2026_02_23_sbm/perturbed_hub_target",
-    "western_us_power_grid": "./data/perturbed_networks/western_us_power_grid/perturbed_hub_target",
-    "western_us_power_grid_er": "./data/perturbed_networks/western_us_power_grid_erdos_renyi/perturbed_hub_target",
-    "western_us_power_grid_config": "./data/perturbed_networks/western_us_power_grid_configuration_model/perturbed_hub_target",
-    "western_us_power_grid_sbm": "./data/perturbed_networks/western_us_power_grid_sbm/perturbed_hub_target",
-    "ca-AstroPH_gcc": "./data/perturbed_networks/ca-AstroPh_gcc/perturbed_hub_target",
-    "ca-AstroPH_gcc_er": "./data/perturbed_networks/ca-AstroPh_erdos_renyi/perturbed_hub_target",
-    "ca-AstroPH_gcc_config": "./data/perturbed_networks/ca-AstroPh_configuration_model/perturbed_hub_target",
-    "ca-AstroPH_gcc_sbm": "./data/perturbed_networks/ca-AstroPh_sbm/perturbed_hub_target",
-    "wiki-Vote_gcc": "./data/perturbed_networks/wiki-Vote_gcc/perturbed_hub_target",
-    "wiki-Vote_gcc_er": "./data/perturbed_networks/wiki-Vote_erdos_renyi/perturbed_hub_target",
-    "wiki-Vote_gcc_config": "./data/perturbed_networks/wiki-Vote_configuration_model/perturbed_hub_target",
-    "wiki-Vote_gcc_sbm": "./data/perturbed_networks/wiki-Vote_sbm/perturbed_hub_target"
-}
-
-# Paths of of output folders for periphery-targeted perturbations
-#########################################
-output_folders_periphery_targeted = {
-    "chloe_ppi_lcc_2026_02_23": "./data/perturbed_networks/chloe_ppi_lcc_2026_02_23/perturbed_periphery_target",
-    "chloe_ppi_lcc_2026_02_23_er": "./data/perturbed_networks/chloe_ppi_lcc_2026_02_23_erdos_renyi/perturbed_periphery_target",
-    "chloe_ppi_lcc_2026_02_23_config": "./data/perturbed_networks/chloe_ppi_lcc_2026_02_23_configuration_model/perturbed_periphery_target",
-    "chloe_ppi_lcc_2026_02_23_sbm": "./data/perturbed_networks/chloe_ppi_lcc_2026_02_23_sbm/perturbed_periphery_target",
-    "western_us_power_grid": "./data/perturbed_networks/western_us_power_grid/perturbed_periphery_target",
-    "western_us_power_grid_er": "./data/perturbed_networks/western_us_power_grid_erdos_renyi/perturbed_periphery_target",
-    "western_us_power_grid_config": "./data/perturbed_networks/western_us_power_grid_configuration_model/perturbed_periphery_target",
-    "western_us_power_grid_sbm": "./data/perturbed_networks/western_us_power_grid_sbm/perturbed_periphery_target",
-    "ca-AstroPH_gcc": "./data/perturbed_networks/ca-AstroPh_gcc/perturbed_periphery_target",
-    "ca-AstroPH_gcc_er": "./data/perturbed_networks/ca-AstroPh_erdos_renyi/perturbed_periphery_target",
-    "ca-AstroPH_gcc_config": "./data/perturbed_networks/ca-AstroPh_configuration_model/perturbed_periphery_target",
-    "ca-AstroPH_gcc_sbm": "./data/perturbed_networks/ca-AstroPh_sbm/perturbed_periphery_target",
-    "wiki-Vote_gcc": "./data/perturbed_networks/wiki-Vote_gcc/perturbed_periphery_target",
-    "wiki-Vote_gcc_er": "./data/perturbed_networks/wiki-Vote_erdos_renyi/perturbed_periphery_target",
-    "wiki-Vote_gcc_config": "./data/perturbed_networks/wiki-Vote_configuration_model/perturbed_periphery_target",
-    "wiki-Vote_gcc_sbm": "./data/perturbed_networks/wiki-Vote_sbm/perturbed_periphery_target"
-}
-
-# Paths to degree-0 node lists
-#########################################
-
-nodelist_files = {
-    "chloe_ppi_lcc_2026_02_23": None,
-    "chloe_ppi_lcc_2026_02_23_er": None,
-    "chloe_ppi_lcc_2026_02_23_config": None,
-    "chloe_ppi_lcc_2026_02_23_sbm": "./data/baseline_networks/old_tsv_networks/null_models/chloe_ppi_sbm_isolated_nodes.csv",
-    "western_us_power_grid": None,
-    "western_us_power_grid_er": "./data/baseline_networks/old_tsv_networks/null_models/western_us_power_grid_erdos_renyi_isolated_nodes.csv",
-    "western_us_power_grid_config": None,
-    "western_us_power_grid_sbm": "./data/baseline_networks/old_tsv_networks/null_models/western_us_power_grid_sbm_isolated_nodes.csv",
-    "ca-AstroPH_gcc": None,
-    "ca-AstroPH_gcc_er": None,
-    "ca-AstroPH_gcc_config": None,
-    "ca-AstroPH_gcc_sbm": "data/baseline_networks/old_tsv_networks/null_models/ca-AstroPh_sbm_isolated_nodes.csv",
-    "wiki-Vote_gcc": None,
-    "wiki-Vote_gcc_er": None,
-    "wiki-Vote_gcc_config": None,
-    "wiki-Vote_gcc_sbm": "data/baseline_networks/old_tsv_networks/null_models/wiki-Vote_sbm_isolated_nodes.csv",
+NOISE_LEVELS_REMOVED = [0.02, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.40, 0.50]
+NOISE_LEVELS_ADDED = [0.05, 0.10, 0.15, 0.20, 0.30, 0.50, 1.00, 1.50, 2.00]
+NOISE_LEVELS = {
+    "random_addition": NOISE_LEVELS_ADDED,
+    "random_removal": NOISE_LEVELS_REMOVED,
+    "hub_addition": NOISE_LEVELS_ADDED,
+    "hub_removal": NOISE_LEVELS_REMOVED,
+    "periphery_addition": NOISE_LEVELS_ADDED,
+    "periphery_removal": NOISE_LEVELS_REMOVED,
+    "betweenness_removal": NOISE_LEVELS_REMOVED,
+    "triadic_closure_addition": NOISE_LEVELS_ADDED,
+    "degree_preserving_rewiring": NOISE_LEVELS_REMOVED,  # fraction of edges rewired
 }
 
 
-############################################################
-# Determine the parameters
-############################################################
+def extended_set_networks():
+    overview = pd.read_csv(BASELINE_DIR + "extended_set/extended_set_overview.csv")
+    return overview.loc[overview.status == "ok", "key"].tolist()
 
-PERTURBATIONS = {
-    "random": {
-        "folder": output_folders_random[baseline_key],
-        "noise_types": ["added_edges", "removed_edges"]
-    },
-    "hub": {
-        "folder": output_folders_hub_targeted[baseline_key],
-        "noise_types": ["targeted_hub_addition", "targeted_hub_removal"]
-    },
-    "periphery": {
-        "folder": output_folders_periphery_targeted[baseline_key],
-        "noise_types": ["targeted_periphery_addition", "targeted_periphery_removal"]
-    }
-}
 
-############################################################
-# Run the code to generate the perturbed networks
-############################################################
+def all_units():
+    """unit -> (baselines, output folder, repeats)"""
+    units = {}
+    for network in CORE_NETWORKS:
+        units[network] = (
+            [(f"{BASELINE_DIR}{network}.csv", None)],
+            f"{OUT_DIR}{network}/empirical",
+            REPEATS_EMPIRICAL,
+        )
+        for model in NULL_MODELS:
+            baselines = []
+            for rep in range(N_NULL_REPLICATES):
+                edgelist = f"{NULL_DIR}{model}_ensemble/{network}_{model}_rep{rep}.csv"
+                sidecar = edgelist.replace(".csv", "_isolated_nodes.csv")  # ER only
+                baselines.append(
+                    (edgelist, sidecar if os.path.exists(sidecar) else None)
+                )
+            units[f"{network}_{model}"] = (
+                baselines,
+                f"{OUT_DIR}{network}/{model}",
+                REPEATS_NULL,
+            )
+    for network in extended_set_networks():
+        units[network] = (
+            [(f"{BASELINE_DIR}extended_set/{network}.csv", None)],
+            f"{OUT_DIR}{network}/empirical",
+            REPEATS_EMPIRICAL,
+        )
+    return units
 
-for perturbation_type in PERTURBATIONS.keys():
-    # Create the folder if it does not exist
-    if not Path(PERTURBATIONS[perturbation_type]["folder"]).exists():
-        Path(PERTURBATIONS[perturbation_type]["folder"]).mkdir(parents=True, exist_ok=True)
-    # Generate the perturbed networks
-    # Addition
-    na.generateNoiseNetworksFromBaseline(
-        path_to_edgelist=baseline_files[baseline_key],
-        folder_to_save_perturbed=PERTURBATIONS[perturbation_type]["folder"],
-        noise_levels=noise_levels_added,
-        path_to_nodelist=nodelist_files[baseline_key],
-        noise_types=[PERTURBATIONS[perturbation_type]["noise_types"][0]],
-        num_repeats_per_noise_level=100,
-        network_name=baseline_key,
+
+if __name__ == "__main__":
+    units = all_units()
+    if sys.argv[1] == "--list":
+        print("\n".join(units))
+        sys.exit()
+
+    unit = sys.argv[1]
+    baselines, folder, repeats = units[unit]
+    print(f"{unit}: {len(baselines)} replicate(s) x {repeats} repeats -> {folder}")
+    skipped = na.generatePerturbedNetworks(
+        baselines=baselines,
+        folder_to_save_perturbed=folder,
+        noise_levels=NOISE_LEVELS,
+        num_repeats=repeats,
     )
-
-    # Removal
-    na.generateNoiseNetworksFromBaseline(
-        path_to_edgelist=baseline_files[baseline_key],
-        folder_to_save_perturbed=PERTURBATIONS[perturbation_type]["folder"],
-        noise_levels=noise_levels_removed,
-        path_to_nodelist=nodelist_files[baseline_key],
-        noise_types=[PERTURBATIONS[perturbation_type]["noise_types"][1]],
-        num_repeats_per_noise_level=100,
-        network_name=baseline_key,
-    )
+    if skipped:
+        print(f"{unit}: skipped (not reachable): {skipped}")
