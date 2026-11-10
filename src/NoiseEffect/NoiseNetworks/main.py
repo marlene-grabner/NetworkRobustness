@@ -1,383 +1,238 @@
-import networkx as nx
+"""
+Generates perturbed networks from a baseline network by adding, removing or
+rewiring edges. Each noise type lives in its own module:
+
+  random_noise.py      random addition and removal
+  targeted_noise.py    hub-, periphery- and betweenness-weighted noise
+  structural_noise.py  triadic closure (RA type) and degree-preserving rewiring
+  baseline_io.py       loading the baseline networks
+
+Output: one parquet file per (noise type, noise level) in the output folder,
+named {noise_type}_{level}.parquet (e.g. hub_addition_0p1.parquet),
+with the columns source, target, replicate, repeat. A file holds every
+perturbed network of that type and level: for an empirical network one
+replicate, for a null model one replicate per null model draw.
+"""
+
+import os
 import random
+import zlib
+from functools import partial
+
+import networkx as nx
 import numpy as np
-import pandas as pd
-import gzip
-from pathlib import Path
+import pyarrow as pa
+import pyarrow.parquet as pq
 
-##################################################
-# Code generates networks with artificially,
-# randomly introduced and removed edges
-##################################################
+from .baseline_io import _loadBaseline
+from .random_noise import _randomEdgesToAdd, _randomEdgesToRemove
+from .structural_noise import (
+    _countTriadicCandidates,
+    _rewireEdges,
+    _triadicClosureEdgesToAdd,
+)
+from .targeted_noise import _edgeBetweenness, _targetedAddition, _targetedRemoval
+
+# noise type -> function(g, num_modify, graph_info=...) returning the edges to add
+# (graph_info is passed by keyword, because partial() fixes 'target' before it)
+ADDITIONS = {
+    "random_addition": _randomEdgesToAdd,
+    "hub_addition": partial(_targetedAddition, target="hubs"),
+    "periphery_addition": partial(_targetedAddition, target="periphery"),
+    "triadic_closure_addition": _triadicClosureEdgesToAdd,
+}
+# noise type -> function(g, num_modify, graph_info=...) returning the edges to remove
+REMOVALS = {
+    "random_removal": _randomEdgesToRemove,
+    "hub_removal": partial(_targetedRemoval, target="hubs"),
+    "periphery_removal": partial(_targetedRemoval, target="periphery"),
+    "betweenness_removal": partial(_targetedRemoval, target="betweenness"),
+}
+# noise type -> function(g, num_modify, graph_info=...) returning the perturbed graph
+REWIRINGS = {
+    "degree_preserving_rewiring": _rewireEdges,
+}
+ALL_NOISE_TYPES = [*ADDITIONS, *REMOVALS, *REWIRINGS]
+
+SCHEMA = pa.schema(
+    [
+        ("source", pa.string()),
+        ("target", pa.string()),
+        ("replicate", pa.uint8()),
+        ("repeat", pa.uint8()),
+    ]
+)
 
 
-# 1. Main function
-def generateNoiseNetworksFromBaseline(
-    path_to_edgelist: str,
+def generatePerturbedNetworks(
+    baselines: list[tuple[str, str | None]],
     folder_to_save_perturbed: str,
-    noise_levels: list[float],
-    path_to_nodelist: str | None = None,
-    noise_types: list[str] = [
-        "added_edges",
-        "removed_edges",
-        "targeted_hub_addition",
-        "targeted_hub_removal",
-        "targeted_periphery_addition",
-        "targeted_periphery_removal",
-    ],
-    num_repeats_per_noise_level: int = 10,
-    network_name: str = "network",
-):
+    noise_levels: dict[str, list[float]],
+    num_repeats: int,
+    seed: int = 0,
+) -> list[tuple[str, float]]:
     """
-    Orchestrates the process of generating networks with randomly
-    added and removed edges from a baseline network.
+    Perturbs every baseline num_repeats times per noise type and level.
 
-    :param path_to_edgelist: Path to the edgelist file of the baseline network
-    :type path_to_edgelist: str
-    :param folder_to_save_perturbed: Folder where perturbed networks will be saved
-    :type folder_to_save_perturbed: str
-    :param noise_levels: List of noise levels to apply
-    :type noise_levels: list[float]
-    :param path_to_nodelist: Optional path to a nodelist file. If provided, it will be used to add degree-0 nodes not present in an edgelist.
-    :type path_to_nodelist: str | None
-    :param noise_types: List of noise types to apply. Optional, defaults to all types
-    :type noise_types: list[str]
-    :param num_repeats_per_noise_level: Number of repeats per noise level. Optional, defaults to 10
-    :type num_repeats_per_noise_level: int
-    :param network_name: Information on the main network, will be included in the file name of the perturbed networks. Optional, defaults to "network"
-    :type network_name: str
+    :param baselines: one (edgelist csv, isolated-nodes file or None) per
+        replicate: a single entry for an empirical network, one per draw for a
+        null model. The replicate index is the position in this list.
+    :param folder_to_save_perturbed: output folder (existing files are never
+        overwritten)
+    :param noise_levels: noise type -> fractions of the baseline edges to add,
+        remove or rewire
+    :param num_repeats: perturbed networks per replicate, type and level
+    :param seed: base seed; every (replicate, type, level) gets its own seed
+        derived from it, so a file can be regenerated on its own
+    :return: the (noise type, level) pairs skipped because the level is not
+        reachable (triadic closure with too few candidate pairs)
     """
-    # Load the baseline network
-    g, idx_to_node, node_to_idx = _loadBaseline(path_to_edgelist, path_to_nodelist)
+    unknown = set(noise_levels) - set(ALL_NOISE_TYPES)
+    if unknown:
+        raise ValueError(f"Unknown noise types: {sorted(unknown)}")
+    tasks = [(t, level) for t, levels in noise_levels.items() for level in levels]
+
+    os.makedirs(folder_to_save_perturbed, exist_ok=True)
+    paths = {
+        task: os.path.join(folder_to_save_perturbed, _fileName(*task)) for task in tasks
+    }
+    existing = [p for p in paths.values() if os.path.exists(p)]
+    if existing:
+        raise FileExistsError(
+            f"{len(existing)} output files exist already, e.g. {existing[0]}"
+        )
+
+    skipped = _unreachableLevels(baselines, tasks)
+    for noise_type, level in skipped:
+        print(f"  skipping {noise_type} at {level}: more edges than candidate pairs")
+    tasks = [task for task in tasks if task not in skipped]
+
+    writers = {}
+    try:
+        for replicate, (edgelist, nodelist) in enumerate(baselines):
+            g, idx_to_node, _ = _loadBaseline(edgelist, nodelist)
+            graph_info = _precomputeGraphInfo(g, [t for t, _ in tasks])
+            for noise_type, level in tasks:
+                _seed(seed, replicate, noise_type, level)
+                num_modify = _numberOfEdgesToModify(noise_type, level, graph_info)
+                table = _perturbRepeats(
+                    g,
+                    num_modify,
+                    noise_type,
+                    graph_info,
+                    idx_to_node,
+                    replicate,
+                    num_repeats,
+                )
+                if (noise_type, level) not in writers:
+                    writers[(noise_type, level)] = pq.ParquetWriter(
+                        paths[(noise_type, level)], SCHEMA
+                    )
+                # one row group per replicate
+                writers[(noise_type, level)].write_table(table)
+            print(f"  replicate {replicate} done", flush=True)
+    finally:
+        for writer in writers.values():
+            writer.close()
+    return skipped
+
+
+def _fileName(noise_type: str, level: float) -> str:
+    return f"{noise_type}_{str(level).replace('.', 'p')}.parquet"
+
+
+def _seed(seed: int, replicate: int, noise_type: str, level: float):
+    """Seeds random and numpy for one (replicate, type, level)."""
+    task_seed = zlib.crc32(f"{seed}|{replicate}|{noise_type}|{level}".encode())
+    random.seed(task_seed)
+    np.random.seed(task_seed)
+
+
+def _unreachableLevels(baselines, tasks) -> list[tuple[str, float]]:
+    """
+    Triadic closure levels that need more edges than some replicate has
+    candidate pairs. They are skipped for all replicates, so every file holds
+    the same replicates.
+    """
+    triadic = [task for task in tasks if task[0] == "triadic_closure_addition"]
+    if not triadic:
+        return []
+    unreachable = set()
+    for edgelist, nodelist in baselines:
+        g, _, _ = _loadBaseline(edgelist, nodelist)
+        n_candidates = _countTriadicCandidates(g)
+        for noise_type, level in triadic:
+            if int(g.number_of_edges() * level) > n_candidates:
+                unreachable.add((noise_type, level))
+    return [task for task in triadic if task in unreachable]
+
+
+def _precomputeGraphInfo(g: nx.Graph, noise_types: list[str]) -> dict:
+    """Baseline information the noise types sample from (computed once)."""
     graph_info = {
         "degrees": dict(g.degree()),
         "nodes": list(g.nodes()),
-        "edges": list(g.edges())
+        "edges": list(g.edges()),
     }
-    for noise_level in noise_levels:
-        num_edges_to_modify = _calcualteNumberOfEdgesToModify(
-            g, noise_level, noise_types, graph_info
-        )
-        for noise_type in noise_types:
-            # List to hold the repeat results
-            all_dfs = []
-            for repeat in range(num_repeats_per_noise_level):
-                # Generate perturbed graph based on the action word
-                if "add" in noise_type:
-                    G_perturbed = _addEdgesToNetwork(g, num_edges_to_modify, noise_type, graph_info)
-                elif "remov" in noise_type:
-                    G_perturbed = _removeEdgesFromNetwork(
-                        g, num_edges_to_modify, noise_type, graph_info
-                    )
-                else:
-                    raise ValueError(f"Unknown noise type: {noise_type}")
-
-                # Extract edges and convert to DataFrame
-                df_repeat = pd.DataFrame(G_perturbed.edges(), columns=["source", "target"])
-
-                # Relabel nodes in the DataFrame back to original labels
-                df_repeat["source"] = df_repeat["source"].map(idx_to_node)
-                df_repeat["target"] = df_repeat["target"].map(idx_to_node)
-
-                # Add the repeat ID as a column
-                df_repeat["repeat"] = repeat
-
-                # Store this DataFrame
-                all_dfs.append(df_repeat)
-
-            # Combine all repeats into single DataFrame
-            final_df = pd.concat(all_dfs, ignore_index=True)
-
-            _saveParquet(
-                final_df,
-                folder_to_save_perturbed,
-                noise_level,
-                network_name,
-                modification_type=noise_type,
-            )
+    # The expensive parts are only computed when a noise type needs them
+    if "betweenness_removal" in noise_types:
+        graph_info["edge_betweenness"] = _edgeBetweenness(g, graph_info["edges"])
+    if "triadic_closure_addition" in noise_types:
+        graph_info["neighbours"] = {n: list(g.neighbors(n)) for n in g.nodes()}
+        graph_info["n_triadic_candidates"] = _countTriadicCandidates(g)
+    return graph_info
 
 
-############################################################
-# 2. Loading the baseline network
-
-
-def _loadBaseline(path_to_edgelist: str, path_to_nodelist: str | None = None):
-    """
-    Loads the baseline network from an edgelist file and creates
-    mappings between original node labels and integer indices.
-    Returns a networkx graph with integer-labeled nodes.
-
-    :param path_to_edgelist: Path to the edgelist file of the baseline network
-    :type path_to_edgelist: str
-    """
-    # Required params: path (file path to edgelist)
-    g_raw = nx.read_edgelist(path_to_edgelist)
-    # optionally add degree-0 nodes
-    if path_to_nodelist is not None:
-        with open(path_to_nodelist) as f:
-            content = f.read().strip()
-            all_nodes = content.split(",") if content else []
-        g_raw.add_nodes_from(n.strip() for n in all_nodes if n.strip())
-    # Ensure all nodes are strings
-    if not all(isinstance(n, str) for n in g_raw.nodes()):
-       raise TypeError("All node labels must be strings; got mixed/non-string types.")
-    # Show the full node set was loaded
-    print(f"Loaded {g_raw.number_of_nodes()} nodes and {g_raw.number_of_edges()} edges from the edgelist.")
-    # Sorting the nodes to make the mapping always the same
-    original_node_labels = sorted(list(g_raw.nodes()))
-    # Create the forward and reverse mappings
-    idx_to_node = {i: label for i, label in enumerate(original_node_labels)}
-    node_to_idx = {label: i for i, label in enumerate(original_node_labels)}
-    # Creating an integer-labeled graph
-    g = nx.relabel_nodes(g_raw, node_to_idx)
-    return g, idx_to_node, node_to_idx
-
-
-############################################################
-# 3. Introduce noise by adding and removing edges
-
-
-def _addEdgesToNetwork(g: nx.Graph, num_edges_to_modify: int, noise_type: str, graph_info: dict):
-    """
-    Overall function to introduce noise by adding edges.
-
-    :param g: Original network
-    :type g: nx.Graph
-    :param num_edges_to_modify: Number of edges to add and remove
-    :type num_edges_to_modify: int
-    """
-    # Map the string to the correct function and target
-    dispatch = {
-        "added_edges": lambda: _randomEdgesToAdd(g, num_edges_to_modify, graph_info),
-        "targeted_hub_addition": lambda: _targetedAddition(
-            g, num_edges_to_modify, target="hubs", graph_info=graph_info
-        ),
-        "targeted_periphery_addition": lambda: _targetedAddition(
-            g, num_edges_to_modify, target="periphery", graph_info=graph_info
-        ),
-    }
-
-    if noise_type not in dispatch:
-        raise ValueError(f"Addition strategy for '{noise_type}' is not defined.")
-
-    # Execute the mapped function
-    edges_to_add = dispatch[noise_type]()
-
-    # Add the new edges to the graph
-    G_added = g.copy()
-    G_added.add_edges_from(edges_to_add)
-    return G_added
-
-
-def _removeEdgesFromNetwork(g: nx.Graph, num_edges_to_modify: int, noise_type: str, graph_info: dict):
-    """
-    Overall function to introduce noise by removing edges.
-
-    :param g: Original network
-    :type g: nx.Graph
-    :param num_edges_to_modify: Number of edges to add and remove
-    :type num_edges_to_modify: int
-    """
-    dispatch = {
-        "removed_edges": lambda: _randomEdgesToRemove(g, num_edges_to_modify, graph_info),
-        "targeted_hub_removal": lambda: _targetedRemoval(
-            g, num_edges_to_modify, target="hubs", graph_info=graph_info
-        ),
-        "targeted_periphery_removal": lambda: _targetedRemoval(
-            g, num_edges_to_modify, target="periphery", graph_info=graph_info
-        ),
-    }
-
-    if noise_type not in dispatch:
-        raise ValueError(f"Removal strategy for '{noise_type}' is not defined.")
-
-    edges_to_remove = dispatch[noise_type]()
-
-    G_removed = g.copy()
-    G_removed.remove_edges_from(edges_to_remove)
-    return G_removed
-
-
-def _calcualteNumberOfEdgesToModify(g, noise_level, noise_types, graph_info):
-    """
-    Calculates how many edges shall be modified based on the noise level.
-
-    :param g: Original network
-    :type g: nx.Graph
-    :param noise_level: Noise level to apply
-    :type noise_level: float
-    :param noise_types: Types of noise to apply (e.g., ["added_edges", "removed_edges"])
-    :type noise_types: list[str]
-    :param graph_info: Precomputed graph information (e.g., degrees, nodes, edges)
-    :type graph_info: dict
-    """
-
+def _numberOfEdgesToModify(noise_type: str, level: float, graph_info: dict) -> int:
+    """Number of edges to add, remove or rewire for a noise level."""
     num_edges = len(graph_info["edges"])
-    num_modify = int(num_edges * noise_level)  # Number of edges to modify
-
-    # Check if results make sense
+    num_modify = int(num_edges * level)
     if num_modify <= 0:
-        raise ValueError("Number of edges to modify can not be negative or zero.")
-    if "removed_edges" in noise_types and num_modify >= num_edges:
+        raise ValueError(f"Noise level {level} modifies no edges.")
+    if noise_type in REMOVALS and num_modify >= num_edges:
         raise ValueError("Can not remove all edges in the graph.")
-
+    if noise_type in REWIRINGS and num_modify > num_edges:
+        raise ValueError("Can not rewire more edges than the graph has.")
     return num_modify
 
 
-############################################################
-# 5. Random noise introduction
-
-
-def _randomEdgesToAdd(g: nx.Graph, num_modify: int, graph_info: dict):
-    """
-    Random edge addition using rejection sampling.
-    """
-    nodes = graph_info["nodes"]
-    num_nodes = len(nodes)
-    edges_to_add = set()
-
-    # Calculate max possible non-edges
-    max_possible_edges = (num_nodes * (num_nodes - 1)) // 2 - g.number_of_edges()
-    if num_modify > max_possible_edges:
-        raise ValueError("More edges to be added than available non-edges.")
-
-    # Loop until we have enough unique edges
-    while len(edges_to_add) < num_modify:
-        # Sample in batches to make numpy lightning fast
-        batch_size = (num_modify - len(edges_to_add)) * 2
-
-        # Pick random nodes uniformly
-        u_indices = np.random.randint(0, num_nodes, size=batch_size)
-        v_indices = np.random.randint(0, num_nodes, size=batch_size)
-
-        for u_idx, v_idx in zip(u_indices, v_indices):
-            if u_idx != v_idx:  # No self-loops
-                u, v = nodes[u_idx], nodes[v_idx]
-
-                if not g.has_edge(u, v):
-                    # Sort to ensure (u,v) and (v,u) are treated identically by the set
-                    edge = (u, v) if u < v else (v, u)
-                    edges_to_add.add(edge)
-
-                    if len(edges_to_add) == num_modify:
-                        break
-
-    return list(edges_to_add)
-
-
-def _randomEdgesToRemove(g, num_modify, graph_info):
-    """
-    Gets all edges in the original graph and randomly samples edges to remove from the graph.
-
-    :param g: Original network
-    :type g: nx.Graph
-    :param num_modify: Number of edges to remove
-    :type num_modify: int
-    :param graph_info: Precomputed graph information
-    :type graph_info: dict
-    """
-    edges = graph_info["edges"]
-    # Directly sample unique edges to remove
-    edges_to_remove = random.sample(edges, num_modify)
-    return edges_to_remove
-
-
-############################################################
-# 5. Targeted noise introduction
-
-
-def _targetedRemoval(g: nx.Graph, num_modify: int, target: str, graph_info: dict):
-    """
-    Randomly samples edges to remove, weighting edges connected to
-    high or low degree hubs depending on the target.
-    """
-    edges = graph_info["edges"]
-    degrees = graph_info["degrees"]
-
-    # Calculate weights based on the product of degrees
-    if target == "hubs":
-        weights = np.array([degrees[u] * degrees[v] for u, v in edges], dtype=float)
-    elif target == "periphery":
-        # max(..., 1) prevents DivisionByZero if isolated nodes exist.
-        weights = np.array(
-            [1.0 / (max(degrees[u], 1) * max(degrees[v], 1)) for u, v in edges],
-            dtype=float,
+def _perturb(
+    g: nx.Graph, num_modify: int, noise_type: str, graph_info: dict
+) -> nx.Graph:
+    """Returns one perturbed copy of the baseline."""
+    if noise_type in ADDITIONS:
+        G_perturbed = g.copy()
+        G_perturbed.add_edges_from(
+            ADDITIONS[noise_type](g, num_modify, graph_info=graph_info)
         )
-
-    # Normalize to create a probability distribution
-    probabilities = weights / weights.sum()
-
-    # Sample unique indices based on probabilities
-    chosen_indices = np.random.choice(
-        len(edges), size=num_modify, replace=False, p=probabilities
-    )
-    edges_to_remove = [edges[i] for i in chosen_indices]
-
-    return edges_to_remove
-
-
-def _targetedAddition(g: nx.Graph, num_modify: int, target: str, graph_info: dict):
-    """
-    Randomly samples non-edges to add, heavily weighting edges between
-    high or low degree nodes depending on the target.
-    """
-    nodes = graph_info["nodes"]
-    degrees = graph_info["degrees"]
-    edges_to_add = set()
-
-    max_possible_edges = (len(nodes) * (len(nodes) - 1)) // 2 - g.number_of_edges()
-    if num_modify > max_possible_edges:
-        raise ValueError("More edges to be added than available non-edges.")
-
-    # 1. Calculate weights for INDIVIDUAL nodes, not edges!
-    if target == "hubs":
-        # max(..., 1) gives degree-0 nodes the same chance as degree-1 nodes,
-        # so isolated nodes can be reconnected (mirrors periphery weighting).
-        node_weights = np.array([max(degrees[n], 1) for n in nodes], dtype=float)
-    elif target == "periphery":
-        node_weights = np.array([1.0 / max(degrees[n], 1) for n in nodes], dtype=float)
+    elif noise_type in REMOVALS:
+        G_perturbed = g.copy()
+        G_perturbed.remove_edges_from(
+            REMOVALS[noise_type](g, num_modify, graph_info=graph_info)
+        )
     else:
-        raise ValueError("Target must be 'hubs' or 'periphery'")
-
-    # Normalize to create probabilities
-    node_probs = node_weights / node_weights.sum()
-
-    # 2. Sample nodes based on those probabilities
-    while len(edges_to_add) < num_modify:
-        # Sample in batches (ask for 2x what we need to cover duplicates/rejections)
-        batch_size = (num_modify - len(edges_to_add)) * 2
-
-        u_batch = np.random.choice(nodes, size=batch_size, p=node_probs)
-        v_batch = np.random.choice(nodes, size=batch_size, p=node_probs)
-
-        for u, v in zip(u_batch, v_batch):
-            if u != v and not g.has_edge(u, v):
-                edge = (u, v) if u < v else (v, u)
-                edges_to_add.add(edge)
-
-                if len(edges_to_add) == num_modify:
-                    break
-
-    return list(edges_to_add)
+        G_perturbed = REWIRINGS[noise_type](g, num_modify, graph_info=graph_info)
+    return G_perturbed
 
 
-############################################################
-# 4. Save the perturbed edgelists
-
-
-def _saveParquet(
-    final_df: pd.DataFrame,
-    folder_to_save_perturbed: str,
-    noise_level: float,
-    network_name: str,
-    modification_type: str,
+def _perturbRepeats(
+    g, num_modify, noise_type, graph_info, idx_to_node, replicate, num_repeats
 ):
-    """Saves the combined Pandas DataFrame as a Parquet file."""
-    noise_level_str = str(noise_level).replace(".", "p")
-    
-    # Optional but recommended: convert to smaller data types to save RAM/Disk space
-    # If repeat is always 0-99, uint8 is perfect
-    final_df["repeat"] = final_df["repeat"].astype("uint8") 
-    
-    file_path = f"{folder_to_save_perturbed}/{network_name}_{modification_type}_noise_{noise_level_str}.parquet"
-    final_df.to_parquet(file_path, index=False)
+    """All repeats of one (replicate, type, level) as one arrow table."""
+    labels = np.array([idx_to_node[i] for i in range(len(idx_to_node))], dtype=object)
+    edge_arrays, repeats = [], []
+    for repeat in range(num_repeats):
+        G_perturbed = _perturb(g, num_modify, noise_type, graph_info)
+        edges = np.array(G_perturbed.edges(), dtype=np.int64).reshape(-1, 2)
+        edge_arrays.append(edges)
+        repeats.append(np.full(len(edges), repeat, dtype=np.uint8))
+    edges = np.concatenate(edge_arrays)
+    return pa.table(
+        {
+            "source": labels[edges[:, 0]],  # back to the original node labels
+            "target": labels[edges[:, 1]],
+            "replicate": np.full(len(edges), replicate, dtype=np.uint8),
+            "repeat": np.concatenate(repeats),
+        },
+        schema=SCHEMA,
+    )
