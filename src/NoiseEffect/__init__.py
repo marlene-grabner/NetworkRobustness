@@ -1,6 +1,6 @@
 from .NoisePipeline import NetworkNoiseAnalysis
 from . import CommunityDetection
-from .NoiseNetworks import generateNoiseNetworksFromBaseline
+from .NoiseNetworks import generatePerturbedNetworks
 from .ModuleRecovery import benchmarkModuleDetectionAlgorithms
 from .SeedStrucutralMetrics import computeSeedStrucutralMetrics
 from .CompareModules import compareModules
