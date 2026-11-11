@@ -3,7 +3,7 @@
 #SBATCH --array=0-59%20
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=6G
-#SBATCH --time=04:00:00
+#SBATCH --time=06:00:00
 #SBATCH --mail-type=END,TIME_LIMIT,TIME_LIMIT_80
 #SBATCH --output=outputs/logs/%A_%a.out
 #SBATCH --error=outputs/logs/err_%A_%a.txt
