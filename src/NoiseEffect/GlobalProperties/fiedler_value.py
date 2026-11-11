@@ -1,46 +1,67 @@
-import os, sys, time, logging
-import numpy as np
-import pandas as pd
+"""Algebraic connectivity (Fiedler value) of the largest connected component."""
+
 import warnings
-from scipy.sparse import coo_matrix, diags
+
+import numpy as np
+from scipy.sparse import diags
 from scipy.sparse.csgraph import connected_components, laplacian
-from scipy.sparse.linalg import lobpcg, eigsh
+from scipy.sparse.linalg import eigsh, lobpcg
+
+SMALL_GRAPH = 50  # below this the Laplacian is solved densely
+MAX_RESIDUAL = 1e-3  # accepted |Lx - lambda x| / lambda of the fast solver
+
 
 def fiedler_on_gcc(A, N):
-    """Returns Fiedler value on GCC, plus whether graph was disconnected."""
+    """
+    Returns the Fiedler value (second-smallest eigenvalue of the unnormalised
+    Laplacian) of the largest connected component, and whether the graph was
+    disconnected.
+
+    LOBPCG is fast on the dense networks but does not converge on sparse,
+    grid-like ones (power grid, roads), where it returns a too large value
+    without an error. Its result is therefore only kept if the residual is
+    small; otherwise the exact shift-invert solver is used, which is fast on
+    exactly those sparse networks.
+    """
     n_comp, labels = connected_components(A, directed=False, return_labels=True)
-    
     disconnected = n_comp > 1
     if disconnected:
-        # Slice out the GCC
-        gcc_label = np.bincount(labels).argmax()
-        mask = labels == gcc_label
+        mask = labels == np.bincount(labels).argmax()
         A = A.tocsr()[mask][:, mask]
-        N = mask.sum()
+        N = int(mask.sum())
 
-    L = laplacian(A, normed=False).asfptype().tocsr()
-    diag = L.diagonal().copy()
-    diag[diag == 0] = 1.0
-    M = diags(1.0 / diag)
+    L = laplacian(A, normed=False).astype(float).tocsr()
+    if N < SMALL_GRAPH:
+        if N < 2:
+            return 0.0, disconnected
+        return max(0.0, float(np.linalg.eigvalsh(L.toarray())[1])), disconnected
 
-    rng = np.random.default_rng(42)
-    X = rng.standard_normal((N, 2))
+    fiedler = _fiedler_lobpcg(L)
+    if fiedler is None:
+        # L + 1e-6 I is positive definite, so the factorisation is stable
+        evals = eigsh(
+            L.tocsc(), k=2, sigma=-1e-6, which="LM", return_eigenvectors=False
+        )
+        fiedler = float(np.sort(evals)[1])
+    return max(0.0, fiedler), disconnected
 
-    fiedler = None
+
+def _fiedler_lobpcg(L) -> float | None:
+    """Fiedler value with LOBPCG, or None if it did not converge."""
+    M = diags(
+        1.0 / L.diagonal()
+    )  # Jacobi preconditioner (no zero degrees in a component)
+    X = np.random.default_rng(42).standard_normal((L.shape[0], 2))
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         try:
-            evals, _ = lobpcg(L, X, M=M, largest=False, tol=1e-5, maxiter=500)
-            candidate = float(np.sort(evals)[1])
-            # accept only if it's a sane Fiedler value
-            if np.isfinite(candidate) and candidate >= -1e-8:
-                fiedler = max(0.0, candidate)
+            evals, evecs = lobpcg(L, X, M=M, largest=False, tol=1e-7, maxiter=500)
         except Exception:
-            fiedler = None  # failure -> fall through to shift-invert
-
-    # fallback only if LOBPCG threw or returned something invalid
-    if fiedler is None:
-        evals = eigsh(L, k=2, sigma=1e-8, which='LM', return_eigenvectors=False)
-        fiedler = max(0.0, float(np.sort(evals)[1]))
-
-    return fiedler, disconnected
+            return None
+    i = np.argsort(evals)[1]
+    value, x = float(evals[i]), evecs[:, i] / np.linalg.norm(evecs[:, i])
+    if not np.isfinite(value) or value <= 0:
+        return None
+    if np.linalg.norm(L @ x - value * x) > MAX_RESIDUAL * value:
+        return None
+    return value
