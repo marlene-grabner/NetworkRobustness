@@ -79,7 +79,7 @@ def calculate_file(path, info):
             baselines = dict(f)
         results = cd.community_properties_of_file(path, node_to_idx, baselines)
     except Exception as error:
-        return f"FAILED {path}: {error!r}"
+        return f"FAILED {path}: {type(error).__name__}: {error}"
     results.to_parquet(result_path + ".tmp", index=False)
     os.replace(result_path + ".tmp", result_path)
     return f"done: {result_path} ({len(results)} rows)"
@@ -97,6 +97,18 @@ if __name__ == "__main__":
         sys.exit()
 
     task, n_tasks = int(sys.argv[1]), int(sys.argv[2])
+    missing = [
+        info["results_folder"]
+        for info in infos
+        if not os.path.exists(
+            os.path.join(info["results_folder"], "baseline_partitions.npz")
+        )
+    ]
+    if missing:
+        sys.exit(
+            f"The baseline partitions of {len(missing)} of {len(infos)} units are "
+            f"missing, e.g. in {missing[0]}. Run the 'baselines' step first."
+        )
     n_workers = int(sys.argv[3]) if len(sys.argv) > 3 else 1
     jobs = [
         (path, info)

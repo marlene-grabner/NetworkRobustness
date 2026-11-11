@@ -44,7 +44,7 @@ def calculate_file(path, results_folder, empirical_edgelist, baseline_edgelists)
         node_to_idx = gp.load_node_index(empirical_edgelist)
         results = gp.global_properties_of_file(path, node_to_idx, baseline_edgelists)
     except Exception as error:
-        return f"FAILED {path}: {error!r}"
+        return f"FAILED {path}: {type(error).__name__}: {error}"
     # written under another name first, so a killed job leaves no broken file
     results.to_parquet(result_path + ".tmp", index=False)
     os.replace(result_path + ".tmp", result_path)
