@@ -15,7 +15,7 @@ Global properties of the perturbed networks, one row per network.
 import pandas as pd
 
 from . import metrics as m
-from .perturbed_io import (
+from ..utils.perturbed_io import (
     iter_perturbed_networks,
     parse_perturbed_path,
     read_baseline_edges,

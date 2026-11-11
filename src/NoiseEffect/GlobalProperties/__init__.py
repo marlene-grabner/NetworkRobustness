@@ -5,7 +5,7 @@ from .main import (
     global_properties_of_baseline,
     global_properties_of_file,
 )
-from .perturbed_io import (
+from ..utils.perturbed_io import (
     iter_perturbed_networks,
     load_node_index,
     parse_perturbed_path,
