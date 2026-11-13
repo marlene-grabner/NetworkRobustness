@@ -1,103 +1,155 @@
 """
-Metrics comparing a perturbed-network score vector against the baseline
-score vector for the same network/algorithm/seeds.
+Metrics on the score vectors of the seed expansion algorithms.
 
-All functions work on dense numpy score vectors aligned to the SAME node
-index (see io_helper.NodeIndex) -- this is why baseline and perturbed graphs
-must share one index. Seed nodes are expected to carry -inf scores (as all
-algorithms in src/algorithms already produce) so they never contaminate
-top-k sets or positive/negative labels.
+All score vectors are aligned to the same node index (the empirical network's,
+utils.perturbed_io.load_node_index). Seeds carry -inf, so they are never part
+of a top-k set and never count as positives or negatives. A node is "found"
+(valid) if its score is > 0: reached by the random walk, added by DIAMOnD,
+a neighbour of a seed for first neighbours.
+
+Two questions per seed set:
+  stability  does the perturbed network give the same top-k as the baseline?
+             positives = baseline top-k
+  recovery   does the algorithm find the hidden part of the module?
+             positives = hidden module nodes (on the baseline and on the
+             perturbed network alike)
 """
+
 from __future__ import annotations
 
 import numpy as np
-from sklearn.metrics import roc_auc_score, average_precision_score
+
+K_LIST = [10, 20, 25, 50, 100]
 
 
-def topk_set_valid(scores: np.ndarray, k: int) -> set:
+def top_valid(scores: np.ndarray, k: int) -> np.ndarray:
+    """The (at most) k best nodes with a score > 0, best first; ties by node index."""
+    valid = np.flatnonzero(scores > 0)
+    if len(valid) <= k:
+        order = np.lexsort((valid, -scores[valid]))
+    else:
+        # only sort the k best (plus ties at the cut-off) instead of all nodes
+        part = np.argpartition(-scores[valid], k - 1)
+        cutoff = scores[valid[part[k - 1]]]
+        valid = valid[scores[valid] >= cutoff]
+        order = np.lexsort((valid, -scores[valid]))
+    return valid[order][:k]
+
+
+def n_tied_outside(scores: np.ndarray, top: np.ndarray, k: int) -> int:
     """
-    Returns the set of top-k indices, strictly excluding zero or -inf scores.
-    If the requested k exceeds the number of valid scores, it safely caps at the valid length.
+    Nodes outside the top-k with the same score as the k-th node: how many
+    nodes the deterministic tie-break (lower node index first) decided against.
+    0 means the top-k does not depend on the tie-break.
     """
-    valid_count = int(np.sum(scores > 0))
-    k_actual = min(k, valid_count)
-    if k_actual == 0:
-        return set()
-    
-    order = np.argsort(-scores, kind="stable")
-    return set(order[:k_actual].tolist())
+    if len(top) < k:
+        return 0
+    kth = scores[top[k - 1]]
+    return int(np.sum(scores == kth) - np.sum(scores[top[:k]] == kth))
 
 
-def topk_overlap_metrics(baseline_scores: np.ndarray, perturbed_scores: np.ndarray,
-                          k: int) -> dict:
-    a = set(topk_set_valid(baseline_scores, k))
-    b = set(topk_set_valid(perturbed_scores, k))
-    inter = len(a & b)
-    union = len(a | b)
-
-    jaccard = inter / union if union else np.nan
-    precision = inter / len(b) if b else np.nan   # of the perturbed top-k, fraction also in baseline top-k
-    recall = inter / len(a) if a else np.nan       # of the baseline top-k, fraction recovered
-    f1 = (2 * precision * recall / (precision + recall)
-          if precision and recall and (precision + recall) > 0 else np.nan)
-
-    return {"k": k, "jaccard": jaccard, "precision": precision, "recall": recall, "f1": f1}
-
-
-def auc_metrics(baseline_scores: np.ndarray, perturbed_scores: np.ndarray, k: int) -> dict:
-    # Eligible nodes: exclude seeds (which are -inf in both arrays)
-    eligible = np.isfinite(baseline_scores) & np.isfinite(perturbed_scores)
-    if eligible.sum() < 2:
-        return {"auroc": np.nan, "auprc": np.nan}
-
-    pos_idx = topk_set_valid(baseline_scores, k)
-    
-    # If no true positives exist, or ALL eligible nodes are true positives, AUC is undefined
-    if len(pos_idx) == 0 or len(pos_idx) == eligible.sum():
-        return {"auroc": np.nan, "auprc": np.nan}
-
-    eligible_indices = np.flatnonzero(eligible)
-    y_true = np.array([1 if i in pos_idx else 0 for i in eligible_indices])
-    y_score = perturbed_scores[eligible]
-
-    try:
-        auroc = roc_auc_score(y_true, y_score)
-        auprc = average_precision_score(y_true, y_score)
-    except ValueError:
-        auroc, auprc = np.nan, np.nan
-
-    return {"auroc": auroc, "auprc": auprc}
+def overlap_metrics(baseline_top: set, perturbed_top: set) -> dict:
+    inter = len(baseline_top & perturbed_top)
+    union = len(baseline_top | perturbed_top)
+    # empty perturbed top-k (seeds cut off from the network): nothing recovered
+    precision = inter / len(perturbed_top) if perturbed_top else 0.0
+    recall = inter / len(baseline_top) if baseline_top else np.nan
+    f1 = (
+        2 * precision * recall / (precision + recall)
+        if precision + recall > 0
+        else 0.0
+    )
+    if np.isnan(recall):
+        f1 = np.nan
+    return {
+        "jaccard": inter / union if union else np.nan,
+        "precision": precision,
+        "recall": recall,
+        "f1": f1,
+    }
 
 
-def compare_rankings(baseline_scores: np.ndarray, perturbed_scores: np.ndarray, k_list: list[int]) -> list[dict]:
-    # 1. Count nodes with strict signal (excluding seeds at -inf and unreached at 0)
-    n_valid_base = int(np.sum(baseline_scores > 0))
-    n_valid_pert = int(np.sum(perturbed_scores > 0))
-    
-    # 2. Identify the exact rank where scores drop to zero/unadded
-    rank_zero_base = n_valid_base + 1
-    rank_zero_pert = n_valid_pert + 1
-    
-    # 3. The shortest valid list determines the dynamic cap
-    k_shortest = min(n_valid_base, n_valid_pert)
-    
-    # 4. Merge requested k's with the shortest k, and deduplicate
-    eval_ks = sorted(list(set(k_list + [k_shortest])))
-    
+class RankedScores:
+    """
+    One score vector, sorted once, so AUROC and AUPRC can be computed for many
+    sets of positives without sorting again. Gives the same values as
+    sklearn's roc_auc_score and average_precision_score (ties included).
+    Only nodes with a finite score (non-seeds) take part.
+    """
+
+    def __init__(self, scores: np.ndarray):
+        self.scores = scores
+        self.sorted = np.sort(scores[np.isfinite(scores)])
+        self.n = len(self.sorted)
+
+    def auroc_auprc(self, positives: np.ndarray) -> tuple[float, float]:
+        s = self.scores[positives]
+        s = s[np.isfinite(s)]
+        n_pos = len(s)
+        n_neg = self.n - n_pos
+        if n_pos == 0 or n_neg == 0:
+            return np.nan, np.nan
+        left = np.searchsorted(self.sorted, s, side="left")
+        right = np.searchsorted(self.sorted, s, side="right")
+        # AUROC = Mann-Whitney U with mid ranks
+        mid_rank = left + (right - left + 1) / 2
+        auroc = (mid_rank.sum() - n_pos * (n_pos + 1) / 2) / (n_pos * n_neg)
+        # AUPRC = mean over positives of the precision at their score threshold
+        s_sorted = np.sort(s)
+        pos_at_or_above = n_pos - np.searchsorted(s_sorted, s, side="left")
+        all_at_or_above = self.n - left
+        auprc = float(np.mean(pos_at_or_above / all_at_or_above))
+        return float(auroc), auprc
+
+
+def ranking_summary(scores: np.ndarray, k_list=K_LIST) -> dict:
+    """What is kept of a score vector: the top max(k) nodes and per-k tie counts."""
+    k_max = max(k_list)
+    top = top_valid(scores, k_max)
+    return {
+        "top": top,
+        "n_valid": int(np.sum(scores > 0)),
+        "n_tied_outside": {k: n_tied_outside(scores, top, k) for k in k_list},
+    }
+
+
+def recovery_metrics(
+    scores: np.ndarray, ranked: RankedScores, top: np.ndarray, hidden: np.ndarray, k_list=K_LIST
+) -> list[dict]:
+    """
+    Per k: share of the hidden nodes in the top-k (recall) and of the top-k
+    that is hidden (precision). Same for all k: AUROC/AUPRC and the
+    R-precision, the share of the hidden nodes in the top-|hidden|, which is
+    comparable between seed sets with different numbers of hidden nodes.
+    """
+    auroc, auprc = ranked.auroc_auprc(hidden)
+    hidden_set = set(hidden.tolist())
+    top_r = top if len(top) >= len(hidden) else top_valid(scores, len(hidden))
+    r_precision = len(hidden_set.intersection(top_r[: len(hidden)].tolist())) / len(hidden)
     rows = []
-    for k in eval_ks:
-        # Skip evaluation if k=0 (e.g., if a graph is completely disconnected)
-        if k == 0:
-            continue
-            
-        row = topk_overlap_metrics(baseline_scores, perturbed_scores, k)
-        row.update(auc_metrics(baseline_scores, perturbed_scores, k))
-        
-        # 5. Inject metadata columns into the final DataFrame
-        row["rank_zero_base"] = rank_zero_base
-        row["rank_zero_pert"] = rank_zero_pert
-        row["is_shortest_k"] = (k == k_shortest)
-        
+    for k in k_list:
+        found = len(hidden_set.intersection(top[:k].tolist()))
+        rows.append(
+            {
+                "k": k,
+                "recovery_recall": found / len(hidden_set),
+                "recovery_precision": found / k,
+                "recovery_r_precision": r_precision,
+                "recovery_auroc": auroc,
+                "recovery_auprc": auprc,
+            }
+        )
+    return rows
+
+
+def compare_to_baseline(
+    ranked: RankedScores, top: np.ndarray, baseline_top: np.ndarray, k_list=K_LIST
+) -> list[dict]:
+    """Per k: overlap of the top-k sets, AUROC/AUPRC of the perturbed scores for the baseline top-k."""
+    rows = []
+    for k in k_list:
+        positives = baseline_top[:k]
+        row = {"k": k, **overlap_metrics(set(positives.tolist()), set(top[:k].tolist()))}
+        row["auroc"], row["auprc"] = ranked.auroc_auprc(positives)
         rows.append(row)
-        
     return rows
