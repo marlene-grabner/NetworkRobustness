@@ -8,7 +8,7 @@ import seaborn as sns
 # CONFIGURATION & TOGGLES
 # ==============================================================================
 # Set True for the 4 empirical networks only; False for all 16 network models
-EMPIRICAL_ONLY = True
+EMPIRICAL_ONLY = False
 
 INTEGRATION_RANGE = "0-0.5"
 
