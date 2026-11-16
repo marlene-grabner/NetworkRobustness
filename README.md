@@ -81,7 +81,7 @@ Noise levels range from 0.02–0.50 (fraction removed) and 0.05–2.00 (fraction
 
 - Python ≥ 3.12
 - [uv](https://docs.astral.sh/uv/) package manager (recommended)
-- For SBM null models: `graph-tool` (requires a separate environment, see `scripts/models/sbm_model_with_graphtool_env.py`)
+- For SBM null models: `graph-tool` (requires a separate environment, see `scripts/models/sbm/`)
 
 ### Dependencies
 
@@ -110,17 +110,20 @@ All scripts should be executed from the project root directory.
 #### Generate null models
 
 ```bash
-uv run python scripts/models/generate_null_models.py
+conda run -n graphtool-env python scripts/models/er_and_conf/generate_er_and_conf_null_models_graphtool_env.py
+conda run -n graphtool-env python scripts/models/sbm/fit_sbm_blocks_graphtool_env.py
+conda run -n graphtool-env python scripts/models/sbm/generate_sbm_null_models_graphtool_env.py
 uv run python scripts/models/properties_baseline_networks.py
 ```
 
 #### Generate perturbed networks
 
 ```bash
-uv run python scripts/perturbed_networks/generating_perturbed_networks.py <baseline_key>
+uv run python scripts/perturbed_networks/generating_perturbed_networks.py --list   # all units
+uv run python scripts/perturbed_networks/generating_perturbed_networks.py <unit>
 ```
 
-The `<baseline_key>` corresponds to entries in the script, e.g. `ca-AstroPH_gcc`, `chloe_ppi_lcc_2026_02_23`, `western_us_power_grid`, `wiki-Vote_gcc`.
+A `<unit>` is an empirical network (`huri`, `power`, `wiki` or an extended-set network such as `chicago_road`) or a core network's null model (`huri_er`, `power_conf`, `wiki_sbm`, ...). Output: `data/perturbed_networks_ensembles/{network}/{empirical|er|conf|sbm}/{noise_type}_{level}.parquet` with the columns `source, target, replicate, repeat`.
 
 #### Compute global properties (GCC, singletons)
 

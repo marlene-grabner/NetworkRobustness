@@ -1,27 +1,27 @@
-# Virtual Environment
+# Virtual environments
 venv/
-.venv/
+.venv*/
 
-# Python cache
+# Python and tool caches
 __pycache__/
 *.pyc
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
 
-# IDE and editor settings
+# IDE, editor and OS files
 .vscode/
 .idea/
+.DS_Store
 
-# Data
-.data/
-.outputs/
+# Data, generated results, documentation
+data/
+outputs/
+logs/
+documentation/
+*.tar.gz
+*.parquet
+*.npz
 
-# Pytest cache
-.pytest_cache/
-
-# Secret files
-.env
-
-# Testing notebooks
-notebooks/
-
-# Old files
-old_code/*.egg-info
+# Claude
+.claude/
