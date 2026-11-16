@@ -1,4 +1,5 @@
 from . import metrics
+from .fiedler_value import fiedler_on_gcc
 from .main import (
     METRICS,
     global_properties,
